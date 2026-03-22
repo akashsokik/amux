@@ -8,14 +8,16 @@ private extension NSToolbarItem.Identifier {
 }
 
 class MainWindowController: NSWindowController {
-    private var sidebarView: SidebarView!
+    private(set) var sidebarView: SidebarView!
     private(set) var splitContainerView: SplitContainerView!
+    private(set) var globalStatusBar: PaneStatusBar!
     private var sidebarWidthConstraint: NSLayoutConstraint!
     private var sidebarLeadingConstraint: NSLayoutConstraint!
     private var resizeHandle: SidebarResizeHandle!
 
     private let sessionManager: SessionManager
     private var toolbarButtons: [NSButton] = []
+    private var statusPollTimer: Timer?
 
     private(set) var isSidebarVisible = true
     private var sidebarWidth: CGFloat = 220
@@ -39,9 +41,14 @@ class MainWindowController: NSWindowController {
             self, selector: #selector(themeDidChange),
             name: Theme.didChangeNotification, object: nil
         )
+
+        statusPollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+            self?.pollSessionStatuses()
+        }
     }
 
     deinit {
+        statusPollTimer?.invalidate()
         NotificationCenter.default.removeObserver(self)
     }
 
@@ -124,6 +131,13 @@ class MainWindowController: NSWindowController {
         splitContainerView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(splitContainerView)
 
+        globalStatusBar = PaneStatusBar(frame: .zero)
+        globalStatusBar.translatesAutoresizingMaskIntoConstraints = false
+        globalStatusBar.setPaneCountProvider { [weak self] in
+            self?.sessionManager.activeSession?.splitTree.allPaneIDs().count ?? 0
+        }
+        contentView.addSubview(globalStatusBar)
+
         resizeHandle = SidebarResizeHandle()
         resizeHandle.translatesAutoresizingMaskIntoConstraints = false
         resizeHandle.onResize = { [weak self] delta in
@@ -148,10 +162,15 @@ class MainWindowController: NSWindowController {
             resizeHandle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             resizeHandle.widthAnchor.constraint(equalToConstant: 5),
 
+            globalStatusBar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            globalStatusBar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            globalStatusBar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            globalStatusBar.heightAnchor.constraint(equalToConstant: PaneStatusBar.barHeight),
+
             splitContainerView.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor),
             splitContainerView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             splitContainerView.topAnchor.constraint(equalTo: layoutGuide.topAnchor),
-            splitContainerView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            splitContainerView.bottomAnchor.constraint(equalTo: globalStatusBar.topAnchor),
         ])
     }
 
@@ -210,6 +229,71 @@ class MainWindowController: NSWindowController {
         guard let session = sessionManager.activeSession else { return }
         if let _ = session.splitFocusedPane(direction: .horizontal) {
             displaySession(session)
+        }
+    }
+
+    // MARK: - Status polling
+
+    private func pollSessionStatuses() {
+        // Update global status bar with focused pane's shell PID
+        if let activeSession = sessionManager.activeSession,
+           let focusedID = activeSession.focusedPaneID,
+           let pane = splitContainerView.pane(for: focusedID) {
+            globalStatusBar.setShellPid(pane.shellProcessID)
+        }
+
+        var needsReload = false
+        for session in sessionManager.sessions {
+            // Try focusedPaneID first, fall back to any pane in the split tree
+            let candidateIDs: [UUID]
+            if let focusedID = session.focusedPaneID {
+                candidateIDs = [focusedID] + session.splitTree.allPaneIDs().filter { $0 != focusedID }
+            } else {
+                candidateIDs = session.splitTree.allPaneIDs()
+            }
+
+            // Find a pane; retry shell PID discovery if needed
+            var foundPane: TerminalPane?
+            var shellPid: pid_t?
+            for id in candidateIDs {
+                guard let scv = splitContainerView,
+                      let pane = scv.paneIncludingCache(for: id) else { continue }
+                if pane.shellProcessID == nil {
+                    pane.retryShellPidDiscovery()
+                }
+                if let pid = pane.shellProcessID {
+                    foundPane = pane
+                    shellPid = pid
+                    break
+                }
+            }
+
+            guard let shellPid = shellPid else {
+                print("[StatusPoll] session '\(session.name)': no shell PID (pane found: \(foundPane != nil))")
+                continue
+            }
+
+            let children = ProcessHelper.debugChildPids(of: shellPid)
+            let fgChild = children.last
+            let hasForeground = fgChild != nil
+
+            if hasForeground {
+                if session.paneStatus != .running {
+                    let fgName = fgChild.flatMap { ProcessHelper.name(of: $0) }
+                    print("[StatusPoll] session '\(session.name)': -> running (shell=\(shellPid), fg=\(fgName ?? "?"), children=\(children))")
+                    session.paneStatus = .running
+                    needsReload = true
+                }
+            } else {
+                if session.paneStatus != .idle {
+                    print("[StatusPoll] session '\(session.name)': -> idle (shell=\(shellPid))")
+                    session.paneStatus = .idle
+                    needsReload = true
+                }
+            }
+        }
+        if needsReload && isSidebarVisible {
+            sidebarView.reloadSessions()
         }
     }
 

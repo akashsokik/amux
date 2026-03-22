@@ -44,7 +44,6 @@ class TerminalPane: NSView {
 
     private var tabBar: PaneTabBar!
     private var tabBarHeightConstraint: NSLayoutConstraint!
-    private var statusBar: PaneStatusBar!
     private var searchBar: PaneSearchBar?
     private var dropOverlay: NSView?
 
@@ -110,7 +109,6 @@ class TerminalPane: NSView {
         wantsLayer = true
         layer?.backgroundColor = Theme.background.cgColor
         setupTabBar()
-        setupStatusBar()
         if !skipInitialTab {
             addInitialTab()
         }
@@ -148,20 +146,6 @@ class TerminalPane: NSView {
             tabBar.leadingAnchor.constraint(equalTo: leadingAnchor),
             tabBar.trailingAnchor.constraint(equalTo: trailingAnchor),
             tabBarHeightConstraint,
-        ])
-    }
-
-    private func setupStatusBar() {
-        statusBar = PaneStatusBar(frame: .zero)
-        statusBar.translatesAutoresizingMaskIntoConstraints = false
-        statusBar.setPaneCountProvider { [weak self] in self?.tabs.count ?? 0 }
-        addSubview(statusBar)
-
-        NSLayoutConstraint.activate([
-            statusBar.bottomAnchor.constraint(equalTo: bottomAnchor),
-            statusBar.leadingAnchor.constraint(equalTo: leadingAnchor),
-            statusBar.trailingAnchor.constraint(equalTo: trailingAnchor),
-            statusBar.heightAnchor.constraint(equalToConstant: PaneStatusBar.barHeight),
         ])
     }
 
@@ -399,11 +383,10 @@ class TerminalPane: NSView {
     private func layoutTerminalViews() {
         let tabBarH: CGFloat = tabBar.isHidden ? 0 : PaneTabBar.barHeight
         let searchBarH: CGFloat = searchBar != nil ? PaneSearchBar.barHeight : 0
-        let statusBarH = PaneStatusBar.barHeight
         let terminalFrame = NSRect(
-            x: 0, y: statusBarH,
+            x: 0, y: 0,
             width: bounds.width,
-            height: bounds.height - tabBarH - searchBarH - statusBarH
+            height: bounds.height - tabBarH - searchBarH
         )
 
         for (id, tv) in terminalViewsByTab {
@@ -470,7 +453,6 @@ class TerminalPane: NSView {
 
             if let pid = matched {
                 self.shellPid = pid
-                self.statusBar.setShellPid(pid)
                 if let cwd = ProcessHelper.cwd(of: pid) {
                     self.currentDirectory = cwd
                 }
@@ -495,7 +477,6 @@ class TerminalPane: NSView {
                name == shellName,
                let cwd = ProcessHelper.cwd(of: pid) {
                 shellPid = pid
-                statusBar.setShellPid(pid)
                 currentDirectory = cwd
                 return true
             }
