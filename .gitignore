@@ -1,0 +1,19 @@
+# Build artifacts
+.build/
+*.o
+*.d
+*.swp
+*~
+
+# macOS
+.DS_Store
+*.xcodeproj/
+*.xcworkspace/
+xcuserdata/
+DerivedData/
+
+# Playwright
+.playwright-mcp/
+
+# Full ghostty clone (only ghostty-dist is tracked)
+vendor/ghostty/
