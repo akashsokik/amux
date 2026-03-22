@@ -5,7 +5,7 @@ class UptimeSegment: StatusBarSegment {
     let label = "Session Uptime"
     let icon = "clock"
     let position = SegmentPosition.left
-    let refreshInterval: TimeInterval = 60.0
+    let refreshInterval: TimeInterval = 30.0
 
     private let valueLabel = NSTextField(labelWithString: "")
     private let iconView = NSImageView()
@@ -41,10 +41,13 @@ class UptimeSegment: StatusBarSegment {
         let elapsed = Int(Date().timeIntervalSince(startDate))
         let hours = elapsed / 3600
         let minutes = (elapsed % 3600) / 60
+        let seconds = elapsed % 60
         if hours > 0 {
             valueLabel.stringValue = "\(hours)h \(minutes)m"
-        } else {
+        } else if minutes > 0 {
             valueLabel.stringValue = "\(minutes)m"
+        } else {
+            valueLabel.stringValue = "\(seconds)s"
         }
     }
 }
