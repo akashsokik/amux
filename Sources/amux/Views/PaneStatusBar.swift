@@ -25,7 +25,6 @@ class PaneStatusBar: NSView {
 
     override init(frame: NSRect) {
         super.init(frame: frame)
-        gitSegment.cwdSegment = cwdSegment
         registerBuiltInSegments()
         registerCustomSegments()
         setupUI()
@@ -162,6 +161,7 @@ class PaneStatusBar: NSView {
         }
         processSegment.shellPid = resolvedPid
         cwdSegment.shellPid = resolvedPid
+        gitSegment.shellPid = resolvedPid
         refresh()
     }
 

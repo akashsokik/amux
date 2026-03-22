@@ -12,7 +12,7 @@ class GitSegment: StatusBarSegment {
     private let branchIcon = NSImageView()
     private let branchLabel = NSTextField(labelWithString: "")
 
-    weak var cwdSegment: CWDSegment?
+    var shellPid: pid_t?
 
     func render() -> NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
@@ -53,7 +53,8 @@ class GitSegment: StatusBarSegment {
     }
 
     func update() {
-        guard let cwd = cwdSegment?.currentCwd,
+        guard let pid = shellPid,
+              let cwd = ProcessHelper.cwd(of: pid),
               let branch = ProcessHelper.gitBranch(at: cwd) else {
             container.isHidden = true
             return
