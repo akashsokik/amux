@@ -9,17 +9,33 @@ class MemorySegment: StatusBarSegment {
     let refreshInterval: TimeInterval = 5.0
 
     private let valueLabel = NSTextField(labelWithString: "")
+    private let iconView = NSImageView()
     private let hostPort = mach_host_self()
 
     func render() -> NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        let dim = Theme.quaternaryText
+
+        iconView.image = NSImage(
+            systemSymbolName: "memorychip",
+            accessibilityDescription: "Memory"
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .medium))
+        iconView.contentTintColor = dim
+        iconView.widthAnchor.constraint(equalToConstant: 12).isActive = true
+        iconView.heightAnchor.constraint(equalToConstant: 12).isActive = true
+
         valueLabel.font = font
-        valueLabel.textColor = Theme.quaternaryText
+        valueLabel.textColor = dim
         valueLabel.backgroundColor = .clear
         valueLabel.isBezeled = false
         valueLabel.isEditable = false
         valueLabel.isSelectable = false
-        return valueLabel
+
+        let stack = NSStackView(views: [iconView, valueLabel])
+        stack.orientation = .horizontal
+        stack.spacing = 3
+        stack.alignment = .centerY
+        return stack
     }
 
     func update() {
@@ -31,7 +47,7 @@ class MemorySegment: StatusBarSegment {
             }
         }
         guard result == KERN_SUCCESS else {
-            valueLabel.stringValue = "MEM --"
+            valueLabel.stringValue = "--"
             return
         }
         let pageSize = UInt64(vm_kernel_page_size)
@@ -42,6 +58,6 @@ class MemorySegment: StatusBarSegment {
         let totalBytes = ProcessInfo.processInfo.physicalMemory
         let usedGB = Double(used) / 1_073_741_824
         let totalGB = Double(totalBytes) / 1_073_741_824
-        valueLabel.stringValue = String(format: "MEM %.1f/%.0fG", usedGB, totalGB)
+        valueLabel.stringValue = String(format: "%.1f/%.0fG", usedGB, totalGB)
     }
 }

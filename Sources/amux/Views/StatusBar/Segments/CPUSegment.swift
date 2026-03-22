@@ -9,18 +9,34 @@ class CPUSegment: StatusBarSegment {
     let refreshInterval: TimeInterval = 3.0
 
     private let valueLabel = NSTextField(labelWithString: "")
+    private let iconView = NSImageView()
     private let hostPort = mach_host_self()
     private var previousTicks: (user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)?
 
     func render() -> NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        let dim = Theme.quaternaryText
+
+        iconView.image = NSImage(
+            systemSymbolName: "cpu",
+            accessibilityDescription: "CPU"
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .medium))
+        iconView.contentTintColor = dim
+        iconView.widthAnchor.constraint(equalToConstant: 12).isActive = true
+        iconView.heightAnchor.constraint(equalToConstant: 12).isActive = true
+
         valueLabel.font = font
-        valueLabel.textColor = Theme.quaternaryText
+        valueLabel.textColor = dim
         valueLabel.backgroundColor = .clear
         valueLabel.isBezeled = false
         valueLabel.isEditable = false
         valueLabel.isSelectable = false
-        return valueLabel
+
+        let stack = NSStackView(views: [iconView, valueLabel])
+        stack.orientation = .horizontal
+        stack.spacing = 3
+        stack.alignment = .centerY
+        return stack
     }
 
     func update() {
@@ -32,7 +48,7 @@ class CPUSegment: StatusBarSegment {
             }
         }
         guard result == KERN_SUCCESS else {
-            valueLabel.stringValue = "CPU --"
+            valueLabel.stringValue = "--"
             return
         }
 
@@ -49,10 +65,10 @@ class CPUSegment: StatusBarSegment {
             let total = dUser + dSystem + dIdle + dNice
             if total > 0 {
                 let usage = Double(dUser + dSystem + dNice) / Double(total) * 100
-                valueLabel.stringValue = String(format: "CPU %.0f%%", usage)
+                valueLabel.stringValue = String(format: "%.0f%%", usage)
             }
         } else {
-            valueLabel.stringValue = "CPU --"
+            valueLabel.stringValue = "--"
         }
         previousTicks = (user, system, idle, nice)
     }

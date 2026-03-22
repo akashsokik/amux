@@ -8,11 +8,22 @@ class CWDSegment: StatusBarSegment {
     let refreshInterval: TimeInterval = 3.0
 
     private let pathButton = NSButton()
+    private let iconView = NSImageView()
     private var lastCwd: String?
     var shellPid: pid_t?
 
     func render() -> NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
+        let dim = Theme.quaternaryText
+
+        iconView.image = NSImage(
+            systemSymbolName: "folder.fill",
+            accessibilityDescription: "Directory"
+        )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .medium))
+        iconView.contentTintColor = dim
+        iconView.widthAnchor.constraint(equalToConstant: 12).isActive = true
+        iconView.heightAnchor.constraint(equalToConstant: 12).isActive = true
+
         pathButton.translatesAutoresizingMaskIntoConstraints = false
         pathButton.title = ""
         pathButton.font = font
@@ -26,7 +37,12 @@ class CWDSegment: StatusBarSegment {
         if let cell = pathButton.cell as? NSButtonCell {
             cell.highlightsBy = .contentsCellMask
         }
-        return pathButton
+
+        let stack = NSStackView(views: [iconView, pathButton])
+        stack.orientation = .horizontal
+        stack.spacing = 3
+        stack.alignment = .centerY
+        return stack
     }
 
     func update() {
