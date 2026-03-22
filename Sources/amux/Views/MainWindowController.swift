@@ -239,6 +239,9 @@ class MainWindowController: NSWindowController {
         if let activeSession = sessionManager.activeSession,
            let focusedID = activeSession.focusedPaneID,
            let pane = splitContainerView.pane(for: focusedID) {
+            if pane.shellProcessID == nil {
+                pane.retryShellPidDiscovery()
+            }
             globalStatusBar.setShellPid(pane.shellProcessID)
         }
 
@@ -252,44 +255,30 @@ class MainWindowController: NSWindowController {
                 candidateIDs = session.splitTree.allPaneIDs()
             }
 
-            // Find a pane; retry shell PID discovery if needed
-            var foundPane: TerminalPane?
-            var shellPid: pid_t?
+            // Find a pane with a status file
+            var statusPath: String?
             for id in candidateIDs {
                 guard let scv = splitContainerView,
-                      let pane = scv.paneIncludingCache(for: id) else { continue }
-                if pane.shellProcessID == nil {
-                    pane.retryShellPidDiscovery()
-                }
-                if let pid = pane.shellProcessID {
-                    foundPane = pane
-                    shellPid = pid
-                    break
-                }
+                      let pane = scv.paneIncludingCache(for: id),
+                      let path = pane.statusFilePath else { continue }
+                statusPath = path
+                break
             }
 
-            guard let shellPid = shellPid else {
-                print("[StatusPoll] session '\(session.name)': no shell PID (pane found: \(foundPane != nil))")
-                continue
-            }
+            guard let statusPath = statusPath else { continue }
 
-            let children = ProcessHelper.debugChildPids(of: shellPid)
-            let fgChild = children.last
-            let hasForeground = fgChild != nil
+            let fileStatus = (try? String(contentsOfFile: statusPath, encoding: .utf8))?
+                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
-            if hasForeground {
-                if session.paneStatus != .running {
-                    let fgName = fgChild.flatMap { ProcessHelper.name(of: $0) }
-                    print("[StatusPoll] session '\(session.name)': -> running (shell=\(shellPid), fg=\(fgName ?? "?"), children=\(children))")
-                    session.paneStatus = .running
-                    needsReload = true
-                }
-            } else {
-                if session.paneStatus != .idle {
-                    print("[StatusPoll] session '\(session.name)': -> idle (shell=\(shellPid))")
-                    session.paneStatus = .idle
-                    needsReload = true
-                }
+            if fileStatus == "running"
+                && session.paneStatus != .running
+                && session.paneStatus != .success
+                && session.paneStatus != .error {
+                session.paneStatus = .running
+                needsReload = true
+            } else if fileStatus != "running" && session.paneStatus != .idle {
+                session.paneStatus = .idle
+                needsReload = true
             }
         }
         if needsReload && isSidebarVisible {

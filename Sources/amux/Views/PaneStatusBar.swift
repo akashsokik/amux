@@ -149,8 +149,19 @@ class PaneStatusBar: NSView {
     // MARK: - Public
 
     func setShellPid(_ pid: pid_t?) {
-        processSegment.shellPid = pid
-        cwdSegment.shellPid = pid
+        var resolvedPid = pid
+        if resolvedPid == nil {
+            // Fallback: try to find a shell process among our children
+            let shellName = URL(fileURLWithPath: TerminalPane.userShell()).lastPathComponent
+            let children = ProcessHelper.childPids()
+            if let found = children.first(where: { ProcessHelper.name(of: $0) == shellName }) {
+                resolvedPid = found
+            } else if let found = children.last {
+                resolvedPid = found
+            }
+        }
+        processSegment.shellPid = resolvedPid
+        cwdSegment.shellPid = resolvedPid
         refresh()
     }
 
