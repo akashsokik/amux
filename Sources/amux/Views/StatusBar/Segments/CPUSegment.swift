@@ -24,7 +24,7 @@ class CPUSegment: StatusBarSegment {
 
     func update() {
         let host = mach_host_self()
-        var count = mach_msg_type_number_t(HOST_CPU_LOAD_INFO_COUNT)
+        var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
         var info = host_cpu_load_info_data_t()
         let result = withUnsafeMutablePointer(to: &info) { ptr in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
