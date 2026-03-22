@@ -746,6 +746,21 @@ extension AppDelegate: GhosttyAppDelegate {
         NSUserNotificationCenter.default.deliver(notification)
     }
 
+    func ghosttyApp(_ app: GhosttyApp, surfaceDidRequestSearch surfaceView: GhosttyTerminalView, needle: String?) {
+        guard let pane = findPane(for: surfaceView) else { return }
+        pane.showSearchWithNeedle(needle)
+    }
+
+    func ghosttyApp(_ app: GhosttyApp, surfaceDidSetSearchTotal surfaceView: GhosttyTerminalView, total: Int) {
+        guard let pane = findPane(for: surfaceView) else { return }
+        pane.updateSearchTotal(total)
+    }
+
+    func ghosttyApp(_ app: GhosttyApp, surfaceDidSetSearchSelected surfaceView: GhosttyTerminalView, selected: Int) {
+        guard let pane = findPane(for: surfaceView) else { return }
+        pane.updateSearchSelected(selected)
+    }
+
     // MARK: - Helper
 
     /// Find the TerminalPane that contains the given GhosttyTerminalView.

@@ -559,6 +559,23 @@ class TerminalPane: NSView {
         terminalView?.focus()
     }
 
+    func showSearchWithNeedle(_ needle: String?) {
+        if searchBar == nil {
+            showSearch()
+        }
+        if let needle = needle, !needle.isEmpty {
+            searchBar?.setSearchText(needle)
+        }
+    }
+
+    func updateSearchTotal(_ total: Int) {
+        searchBar?.updateTotal(total)
+    }
+
+    func updateSearchSelected(_ selected: Int) {
+        searchBar?.updateSelected(selected)
+    }
+
     // MARK: - Edge Drop Destination
 
     private func setupDropDestination() {

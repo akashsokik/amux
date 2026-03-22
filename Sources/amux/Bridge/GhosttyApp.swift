@@ -26,6 +26,15 @@ protocol GhosttyAppDelegate: AnyObject {
 
     /// Called when a command finishes in a terminal surface.
     func ghosttyApp(_ app: GhosttyApp, surfaceCommandFinished surfaceView: GhosttyTerminalView, exitCode: Int, durationNanos: UInt64)
+
+    /// Called when the terminal requests search to start.
+    func ghosttyApp(_ app: GhosttyApp, surfaceDidRequestSearch surfaceView: GhosttyTerminalView, needle: String?)
+
+    /// Called when the search total count changes.
+    func ghosttyApp(_ app: GhosttyApp, surfaceDidSetSearchTotal surfaceView: GhosttyTerminalView, total: Int)
+
+    /// Called when the selected search match changes.
+    func ghosttyApp(_ app: GhosttyApp, surfaceDidSetSearchSelected surfaceView: GhosttyTerminalView, selected: Int)
 }
 
 /// Manages the ghostty_app_t lifecycle and runtime callbacks.
@@ -434,6 +443,35 @@ final class GhosttyApp {
         case GHOSTTY_ACTION_COPY_TITLE_TO_CLIPBOARD:
             return true
 
+        case GHOSTTY_ACTION_START_SEARCH:
+            guard target.tag == GHOSTTY_TARGET_SURFACE else { return false }
+            guard let surfaceView = surfaceView(from: target.target.surface) else { return false }
+            let needle: String?
+            if let needlePtr = action.action.start_search.needle {
+                needle = String(cString: needlePtr)
+            } else {
+                needle = nil
+            }
+            app.delegate?.ghosttyApp(app, surfaceDidRequestSearch: surfaceView, needle: needle)
+            return true
+
+        case GHOSTTY_ACTION_END_SEARCH:
+            return true
+
+        case GHOSTTY_ACTION_SEARCH_TOTAL:
+            guard target.tag == GHOSTTY_TARGET_SURFACE else { return false }
+            guard let surfaceView = surfaceView(from: target.target.surface) else { return false }
+            let total = Int(action.action.search_total.total)
+            app.delegate?.ghosttyApp(app, surfaceDidSetSearchTotal: surfaceView, total: total)
+            return true
+
+        case GHOSTTY_ACTION_SEARCH_SELECTED:
+            guard target.tag == GHOSTTY_TARGET_SURFACE else { return false }
+            guard let surfaceView = surfaceView(from: target.target.surface) else { return false }
+            let selected = Int(action.action.search_selected.selected)
+            app.delegate?.ghosttyApp(app, surfaceDidSetSearchSelected: surfaceView, selected: selected)
+            return true
+
         default:
             // Unknown or unimplemented action
             return false
@@ -488,8 +526,16 @@ final class GhosttyApp {
         for i in 0..<len {
             let item = content[i]
             guard let dataPtr = item.data else { continue }
+            let mime = item.mime.map { String(cString: $0) } ?? ""
             let str = String(cString: dataPtr)
-            pasteboard.setString(str, forType: .string)
+
+            switch mime {
+            case "text/plain", "":
+                pasteboard.setString(str, forType: .string)
+            default:
+                // Skip HTML and other non-text representations
+                break
+            }
         }
     }
 

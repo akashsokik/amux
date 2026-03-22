@@ -254,12 +254,21 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         ))
     }
 
+    /// Send the current mouse position to Ghostty from an NSEvent.
+    private func updateMousePos(from event: NSEvent) {
+        guard let surface = surface else { return }
+        let pos = self.convert(event.locationInWindow, from: nil)
+        let mods = ghosttyMods(event.modifierFlags)
+        ghostty_surface_mouse_pos(surface, pos.x, bounds.size.height - pos.y, mods)
+    }
+
     override func mouseDown(with event: NSEvent) {
         // Ensure this view becomes first responder on click
         if window?.firstResponder !== self {
             window?.makeFirstResponder(self)
         }
         guard let surface = surface else { return }
+        updateMousePos(from: event)
         let mods = ghosttyMods(event.modifierFlags)
         ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_LEFT, mods)
     }
@@ -267,6 +276,7 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
     override func mouseUp(with event: NSEvent) {
         prevPressureStage = 0
         guard let surface = surface else { return }
+        updateMousePos(from: event)
         let mods = ghosttyMods(event.modifierFlags)
         ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_LEFT, mods)
         ghostty_surface_mouse_pressure(surface, 0, 0)
@@ -274,6 +284,7 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
 
     override func rightMouseDown(with event: NSEvent) {
         guard let surface = surface else { return super.rightMouseDown(with: event) }
+        updateMousePos(from: event)
         let mods = ghosttyMods(event.modifierFlags)
         if ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, GHOSTTY_MOUSE_RIGHT, mods) {
             return
@@ -283,6 +294,7 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
 
     override func rightMouseUp(with event: NSEvent) {
         guard let surface = surface else { return super.rightMouseUp(with: event) }
+        updateMousePos(from: event)
         let mods = ghosttyMods(event.modifierFlags)
         if ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, GHOSTTY_MOUSE_RIGHT, mods) {
             return
@@ -292,6 +304,7 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
 
     override func otherMouseDown(with event: NSEvent) {
         guard let surface = surface else { return }
+        updateMousePos(from: event)
         let mods = ghosttyMods(event.modifierFlags)
         let button = mouseButton(from: event.buttonNumber)
         ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_PRESS, button, mods)
@@ -299,16 +312,14 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
 
     override func otherMouseUp(with event: NSEvent) {
         guard let surface = surface else { return }
+        updateMousePos(from: event)
         let mods = ghosttyMods(event.modifierFlags)
         let button = mouseButton(from: event.buttonNumber)
         ghostty_surface_mouse_button(surface, GHOSTTY_MOUSE_RELEASE, button, mods)
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard let surface = surface else { return }
-        let pos = self.convert(event.locationInWindow, from: nil)
-        let mods = ghosttyMods(event.modifierFlags)
-        ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, mods)
+        updateMousePos(from: event)
     }
 
     override func mouseDragged(with event: NSEvent) {
@@ -324,10 +335,7 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        guard let surface = surface else { return }
-        let pos = self.convert(event.locationInWindow, from: nil)
-        let mods = ghosttyMods(event.modifierFlags)
-        ghostty_surface_mouse_pos(surface, pos.x, frame.height - pos.y, mods)
+        updateMousePos(from: event)
     }
 
     override func mouseExited(with event: NSEvent) {

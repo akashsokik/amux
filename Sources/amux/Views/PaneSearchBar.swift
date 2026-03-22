@@ -127,6 +127,9 @@ class PaneSearchBar: NSView {
         window?.makeFirstResponder(searchField)
     }
 
+    private var searchTotal: Int = 0
+    private var searchSelected: Int = 0
+
     func updateMatchCount(selected: Int, total: Int) {
         if total > 0 {
             matchLabel.stringValue = "\(selected)/\(total)"
@@ -135,6 +138,21 @@ class PaneSearchBar: NSView {
         } else {
             matchLabel.stringValue = ""
         }
+    }
+
+    func updateTotal(_ total: Int) {
+        searchTotal = total
+        updateMatchCount(selected: searchSelected, total: searchTotal)
+    }
+
+    func updateSelected(_ selected: Int) {
+        searchSelected = selected
+        updateMatchCount(selected: searchSelected, total: searchTotal)
+    }
+
+    func setSearchText(_ text: String) {
+        searchField.stringValue = text
+        controlTextDidChange(Notification(name: NSControl.textDidChangeNotification))
     }
 
     // MARK: - Actions
@@ -154,7 +172,7 @@ class PaneSearchBar: NSView {
     @objc private func dismissSearch() {
         // Clear search highlighting
         if let surface = surface {
-            let action = "search:close"
+            let action = "end_search"
             _ = action.withCString { ptr in
                 ghostty_surface_binding_action(surface, ptr, UInt(action.utf8.count))
             }
@@ -167,8 +185,7 @@ class PaneSearchBar: NSView {
         let query = searchField.stringValue
         guard !query.isEmpty else { return }
 
-        // Use Ghostty's search binding action
-        let direction = forward ? "search:forward" : "search:backward"
+        let direction = forward ? "navigate_search:next" : "navigate_search:previous"
         _ = direction.withCString { ptr in
             ghostty_surface_binding_action(surface, ptr, UInt(direction.utf8.count))
         }
@@ -183,14 +200,15 @@ extension PaneSearchBar: NSTextFieldDelegate {
         guard let surface = surface else { return }
         let query = searchField.stringValue
         if query.isEmpty {
-            let action = "search:close"
+            // Empty search cancels the current search
+            let action = "search:"
             _ = action.withCString { ptr in
                 ghostty_surface_binding_action(surface, ptr, UInt(action.utf8.count))
             }
             matchLabel.stringValue = ""
         } else {
-            // Start search with the current query
-            let action = "search:start"
+            // Send the search needle to ghostty
+            let action = "search:\(query)"
             _ = action.withCString { ptr in
                 ghostty_surface_binding_action(surface, ptr, UInt(action.utf8.count))
             }
