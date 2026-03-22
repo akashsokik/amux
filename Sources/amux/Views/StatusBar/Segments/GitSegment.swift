@@ -5,14 +5,14 @@ class GitSegment: StatusBarSegment {
     let label = "Git Branch"
     let icon = "arrow.triangle.branch"
     let position = SegmentPosition.right
-    let refreshInterval: TimeInterval = 3.0
+    let refreshInterval: TimeInterval = 5.0  // git dirty check still polls
 
     private let container = NSStackView()
     private let dirtyDot = NSView()
     private let branchIcon = NSImageView()
     private let branchLabel = NSTextField(labelWithString: "")
 
-    var shellPid: pid_t?
+    private var currentCwd: String?
 
     func render() -> NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
@@ -52,9 +52,13 @@ class GitSegment: StatusBarSegment {
         return container
     }
 
+    func setCwd(_ cwd: String?) {
+        currentCwd = cwd
+        update()
+    }
+
     func update() {
-        guard let pid = shellPid,
-              let cwd = ProcessHelper.cwd(of: pid),
+        guard let cwd = currentCwd,
               let branch = ProcessHelper.gitBranch(at: cwd) else {
             container.isHidden = true
             return

@@ -145,24 +145,15 @@ class PaneStatusBar: NSView {
         }
     }
 
-    // MARK: - Public
+    // MARK: - Public API
 
-    func setShellPid(_ pid: pid_t?) {
-        var resolvedPid = pid
-        if resolvedPid == nil {
-            // Fallback: try to find a shell process among our children
-            let shellName = URL(fileURLWithPath: TerminalPane.userShell()).lastPathComponent
-            let children = ProcessHelper.childPids()
-            if let found = children.first(where: { ProcessHelper.name(of: $0) == shellName }) {
-                resolvedPid = found
-            } else if let found = children.last {
-                resolvedPid = found
-            }
-        }
-        processSegment.shellPid = resolvedPid
-        cwdSegment.shellPid = resolvedPid
-        gitSegment.shellPid = resolvedPid
-        refresh()
+    /// Update status bar from a focused pane's state.
+    /// Uses Ghostty-provided CWD (via OSC 7) and shell PID for process name.
+    func updateFromPane(cwd: String?, shellPid: pid_t?) {
+        cwdSegment.setCwd(cwd)
+        gitSegment.setCwd(cwd)
+        processSegment.shellPid = shellPid
+        processSegment.update()
     }
 
     func setPaneCountProvider(_ provider: @escaping () -> Int) {

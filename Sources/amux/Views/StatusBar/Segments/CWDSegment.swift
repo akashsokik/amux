@@ -5,12 +5,11 @@ class CWDSegment: StatusBarSegment {
     let label = "Working Directory"
     let icon = "folder"
     let position = SegmentPosition.center
-    let refreshInterval: TimeInterval = 3.0
+    let refreshInterval: TimeInterval = 0  // driven by Ghostty callbacks, not polling
 
     private let pathButton = NSButton()
     private let iconView = NSImageView()
-    private var lastCwd: String?
-    var shellPid: pid_t?
+    private(set) var currentCwd: String?
 
     func render() -> NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
@@ -45,26 +44,22 @@ class CWDSegment: StatusBarSegment {
         return stack
     }
 
-    func update() {
-        guard let pid = shellPid else {
-            pathButton.title = "~"
-            lastCwd = nil
-            return
-        }
-        if let cwd = ProcessHelper.cwd(of: pid) {
-            let home = NSHomeDirectory()
-            pathButton.title = cwd.hasPrefix(home) ? "~" + cwd.dropFirst(home.count) : cwd
-            lastCwd = cwd
-        } else {
-            pathButton.title = "~"
-            lastCwd = nil
-        }
+    func setCwd(_ cwd: String?) {
+        currentCwd = cwd
+        update()
     }
 
-    var currentCwd: String? { lastCwd }
+    func update() {
+        guard let cwd = currentCwd else {
+            pathButton.title = "~"
+            return
+        }
+        let home = NSHomeDirectory()
+        pathButton.title = cwd.hasPrefix(home) ? "~" + cwd.dropFirst(home.count) : cwd
+    }
 
     @objc private func copyPath() {
-        guard let cwd = lastCwd else { return }
+        guard let cwd = currentCwd else { return }
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(cwd, forType: .string)
         let original = pathButton.contentTintColor

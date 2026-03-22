@@ -15,6 +15,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Set Ghostty resources dir BEFORE init so shell integration loads for all shells
         setupGhosttyResourcesDir()
+        setupAmuxShellIntegration()
 
         // Initialize the Ghostty library first
         let app = GhosttyApp()
@@ -85,8 +86,73 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// Set environment variables so amux shell integration scripts are loaded
+    /// automatically by bash, zsh, and fish when a new terminal surface spawns.
+    private func setupAmuxShellIntegration() {
+        // Locate the shell-integration directory
+        var shellIntegDir: String?
+
+        // Try app bundle Resources/shell-integration (production .app bundle)
+        if let resourcePath = Bundle.main.resourcePath {
+            let candidate = (resourcePath as NSString).appendingPathComponent("shell-integration")
+            if FileManager.default.fileExists(atPath: candidate) {
+                shellIntegDir = candidate
+            }
+        }
+
+        // Fallback: try executable-relative paths (for SPM dev builds)
+        if shellIntegDir == nil, let execURL = Bundle.main.executableURL?.deletingLastPathComponent() {
+            let candidates = [
+                execURL.appendingPathComponent("../Resources/shell-integration").path,
+                execURL.deletingLastPathComponent()
+                    .appendingPathComponent("Resources/shell-integration").path,
+            ]
+            for path in candidates {
+                if FileManager.default.fileExists(atPath: path) {
+                    shellIntegDir = path
+                    break
+                }
+            }
+        }
+
+        guard let shellIntegDir = shellIntegDir else {
+            print("[AppDelegate] Warning: could not find amux shell-integration directory")
+            return
+        }
+
+        // Fish: auto-loads from XDG_DATA_DIRS. The fish scripts live at
+        // shell-integration/fish/vendor_conf.d/amux.fish, and fish looks for
+        // <dir>/fish/vendor_conf.d/*.fish in each XDG_DATA_DIRS entry.
+        // Append our shell-integration dir to XDG_DATA_DIRS.
+        let currentXDG = ProcessInfo.processInfo.environment["XDG_DATA_DIRS"] ?? ""
+        if !currentXDG.contains(shellIntegDir) {
+            if currentXDG.isEmpty {
+                setenv("XDG_DATA_DIRS", shellIntegDir, 1)
+            } else {
+                setenv("XDG_DATA_DIRS", "\(currentXDG):\(shellIntegDir)", 1)
+            }
+        }
+
+        // Bash: source via BASH_ENV (only if not already set)
+        let bashScript = (shellIntegDir as NSString).appendingPathComponent("amux.bash")
+        if ProcessInfo.processInfo.environment["BASH_ENV"] == nil,
+           FileManager.default.fileExists(atPath: bashScript) {
+            setenv("BASH_ENV", bashScript, 1)
+        }
+
+        // Zsh: set AMUX_ZSH_SCRIPT so our .zshenv / .zshrc integration can source it
+        let zshScript = (shellIntegDir as NSString).appendingPathComponent("amux.zsh")
+        if FileManager.default.fileExists(atPath: zshScript) {
+            setenv("AMUX_ZSH_SCRIPT", zshScript, 1)
+        }
+    }
+
     func applicationWillTerminate(_ notification: Notification) {
         sessionManager.save()
+
+        // Clean up per-pane status files
+        let statusDir = "/tmp/amux-\(ProcessInfo.processInfo.processIdentifier)"
+        try? FileManager.default.removeItem(atPath: statusDir)
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -676,6 +742,10 @@ extension AppDelegate: GhosttyAppDelegate {
            session.focusedPaneID == pane.paneID {
             windowController.updateSidebarFileTree(path: pwd)
             windowController.updateSidebarGitViews(cwd: pwd)
+            windowController.globalStatusBar.updateFromPane(
+                cwd: pwd,
+                shellPid: pane.shellProcessID
+            )
         }
     }
 
@@ -731,13 +801,10 @@ extension AppDelegate: GhosttyAppDelegate {
             $0.focusedPaneID == pane.paneID || $0.splitTree.allPaneIDs().contains(pane.paneID)
         })
         if let session = owningSession {
-            print("[CmdFinish] session '\(session.name)': exit=\(exitCode) -> \(newStatus)")
             session.paneStatus = newStatus
             if windowController.isSidebarVisible {
                 windowController.sidebarView.reloadSessions()
             }
-        } else {
-            print("[CmdFinish] no session found for pane \(pane.paneID.uuidString.prefix(4))")
         }
 
         // Notify sidebar git views to refresh

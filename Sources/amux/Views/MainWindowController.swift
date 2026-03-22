@@ -235,14 +235,14 @@ class MainWindowController: NSWindowController {
     // MARK: - Status polling
 
     private func pollSessionStatuses() {
-        // Update global status bar with focused pane's shell PID
+        // Update global status bar from focused pane using Ghostty-provided CWD
         if let activeSession = sessionManager.activeSession,
            let focusedID = activeSession.focusedPaneID,
            let pane = splitContainerView.pane(for: focusedID) {
-            if pane.shellProcessID == nil {
-                pane.retryShellPidDiscovery()
-            }
-            globalStatusBar.setShellPid(pane.shellProcessID)
+            globalStatusBar.updateFromPane(
+                cwd: pane.currentDirectory,
+                shellPid: pane.shellProcessID
+            )
         }
 
         var needsReload = false
