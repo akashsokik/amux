@@ -350,6 +350,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             PaletteCommand(name: "Theme: \(theme.name)", shortcut: "", icon: "paintpalette") {
                 self?.applyThemeAndUpdateMenu(theme)
             }
+        } + StatusBarConfig.shared.registeredSegments.map { info in
+            let enabled = StatusBarConfig.shared.isEnabled(info.id)
+            return PaletteCommand(
+                name: "Status Bar: \(info.label)",
+                shortcut: "",
+                icon: enabled ? "checkmark.circle.fill" : "circle"
+            ) {
+                StatusBarConfig.shared.toggle(info.id)
+            }
         }
         palette.show(in: window)
     }
@@ -715,6 +724,21 @@ extension AppDelegate: GhosttyAppDelegate {
 
     func ghosttyApp(_ app: GhosttyApp, surfaceCommandFinished surfaceView: GhosttyTerminalView, exitCode: Int, durationNanos: UInt64) {
         guard let pane = findPane(for: surfaceView) else { return }
+
+        // Update session status indicator -- match by focusedPaneID or any pane in the split tree
+        let newStatus: PaneStatus = (exitCode == 0 || exitCode == -1) ? .success : .error
+        let owningSession = sessionManager.sessions.first(where: {
+            $0.focusedPaneID == pane.paneID || $0.splitTree.allPaneIDs().contains(pane.paneID)
+        })
+        if let session = owningSession {
+            print("[CmdFinish] session '\(session.name)': exit=\(exitCode) -> \(newStatus)")
+            session.paneStatus = newStatus
+            if windowController.isSidebarVisible {
+                windowController.sidebarView.reloadSessions()
+            }
+        } else {
+            print("[CmdFinish] no session found for pane \(pane.paneID.uuidString.prefix(4))")
+        }
 
         // Notify sidebar git views to refresh
         NotificationCenter.default.post(name: GitHelper.commandDidFinishNotification, object: nil)
