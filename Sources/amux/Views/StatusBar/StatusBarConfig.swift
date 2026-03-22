@@ -26,6 +26,10 @@ class StatusBarConfig {
         return dir.appendingPathComponent("statusbar.json")
     }()
 
+    private static let defaultEnabledIDs: Set<String> = [
+        "process", "cwd", "git", "exit-code",
+    ]
+
     private(set) var enabledIDs: Set<String> = []
     private(set) var customDefinitions: [CustomSegmentDefinition] = []
 
@@ -63,6 +67,7 @@ class StatusBarConfig {
     private func load() {
         guard let data = try? Data(contentsOf: configURL),
               let config = try? JSONDecoder().decode(StatusBarConfigFile.self, from: data) else {
+            enabledIDs = Self.defaultEnabledIDs
             return
         }
         enabledIDs = Set(config.enabled)

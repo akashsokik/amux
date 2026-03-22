@@ -9,6 +9,7 @@ class CPUSegment: StatusBarSegment {
     let refreshInterval: TimeInterval = 3.0
 
     private let valueLabel = NSTextField(labelWithString: "")
+    private let hostPort = mach_host_self()
     private var previousTicks: (user: UInt64, system: UInt64, idle: UInt64, nice: UInt64)?
 
     func render() -> NSView {
@@ -23,12 +24,11 @@ class CPUSegment: StatusBarSegment {
     }
 
     func update() {
-        let host = mach_host_self()
         var count = mach_msg_type_number_t(MemoryLayout<host_cpu_load_info_data_t>.size / MemoryLayout<integer_t>.size)
         var info = host_cpu_load_info_data_t()
         let result = withUnsafeMutablePointer(to: &info) { ptr in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
-                host_statistics(host, HOST_CPU_LOAD_INFO, intPtr, &count)
+                host_statistics(hostPort, HOST_CPU_LOAD_INFO, intPtr, &count)
             }
         }
         guard result == KERN_SUCCESS else {

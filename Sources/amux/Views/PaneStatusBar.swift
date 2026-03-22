@@ -154,6 +154,14 @@ class PaneStatusBar: NSView {
         refresh()
     }
 
+    func setPaneCountProvider(_ provider: @escaping () -> Int) {
+        paneCountSegment.paneCountProvider = provider
+    }
+
+    func setExitCode(_ code: Int32) {
+        exitCodeSegment.setExitCode(code)
+    }
+
     func refresh() {
         for segment in segments where StatusBarConfig.shared.isEnabled(segment.id) {
             segment.update()

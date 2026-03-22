@@ -72,6 +72,16 @@ class TerminalPane: NSView {
     /// PID of the shell process for this pane's active tab (for CWD polling).
     private var shellPid: pid_t?
 
+    /// Public read-only access to the shell PID (used for status polling).
+    var shellProcessID: pid_t? { shellPid }
+
+    /// Retry shell PID discovery if it hasn't been found yet.
+    /// Called by status polling when shellPid is nil.
+    func retryShellPidDiscovery() {
+        guard shellPid == nil else { return }
+        _ = discoverShellPidByName()
+    }
+
     // MARK: - Terminal view accessors
 
     /// The active tab's terminal view (backward-compat with single-terminal callers).
@@ -144,6 +154,7 @@ class TerminalPane: NSView {
     private func setupStatusBar() {
         statusBar = PaneStatusBar(frame: .zero)
         statusBar.translatesAutoresizingMaskIntoConstraints = false
+        statusBar.setPaneCountProvider { [weak self] in self?.tabs.count ?? 0 }
         addSubview(statusBar)
 
         NSLayoutConstraint.activate([

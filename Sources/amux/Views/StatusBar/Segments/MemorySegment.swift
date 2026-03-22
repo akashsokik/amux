@@ -9,6 +9,7 @@ class MemorySegment: StatusBarSegment {
     let refreshInterval: TimeInterval = 5.0
 
     private let valueLabel = NSTextField(labelWithString: "")
+    private let hostPort = mach_host_self()
 
     func render() -> NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
@@ -22,12 +23,11 @@ class MemorySegment: StatusBarSegment {
     }
 
     func update() {
-        let host = mach_host_self()
         var count = mach_msg_type_number_t(MemoryLayout<vm_statistics64_data_t>.size / MemoryLayout<integer_t>.size)
         var stats = vm_statistics64_data_t()
         let result = withUnsafeMutablePointer(to: &stats) { ptr in
             ptr.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { intPtr in
-                host_statistics64(host, HOST_VM_INFO64, intPtr, &count)
+                host_statistics64(hostPort, HOST_VM_INFO64, intPtr, &count)
             }
         }
         guard result == KERN_SUCCESS else {

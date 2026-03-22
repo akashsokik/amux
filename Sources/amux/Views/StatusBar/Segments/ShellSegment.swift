@@ -50,8 +50,9 @@ class ShellSegment: StatusBarSegment {
 
             do {
                 try process.run()
-                process.waitUntilExit()
+                // Read pipe before waiting to avoid deadlock if buffer fills
                 let data = pipe.fileHandleForReading.readDataToEndOfFile()
+                process.waitUntilExit()
                 let output = String(data: data, encoding: .utf8)?
                     .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
                 let display: String
