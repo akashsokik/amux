@@ -162,7 +162,7 @@ class MainWindowController: NSWindowController {
             resizeHandle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             resizeHandle.widthAnchor.constraint(equalToConstant: 5),
 
-            globalStatusBar.leadingAnchor.constraint(equalTo: contentView.leadingAnchor),
+            globalStatusBar.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor),
             globalStatusBar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
             globalStatusBar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             globalStatusBar.heightAnchor.constraint(equalToConstant: PaneStatusBar.barHeight),
