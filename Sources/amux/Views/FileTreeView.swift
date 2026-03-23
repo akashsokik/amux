@@ -37,9 +37,16 @@ class FileTreeNode {
     }
 }
 
+// MARK: - FileTreeView Delegate
+
+protocol FileTreeViewDelegate: AnyObject {
+    func fileTreeView(_ view: FileTreeView, didSelectFileAt path: String)
+}
+
 // MARK: - File Tree View
 
 class FileTreeView: NSView {
+    weak var delegate: FileTreeViewDelegate?
     private var outlineView: NSOutlineView!
     private var scrollView: NSScrollView!
     private var rootNode: FileTreeNode?
@@ -207,6 +214,14 @@ extension FileTreeView: NSOutlineViewDelegate {
         row.isEmphasized = false
         return row
     }
+
+    func outlineViewSelectionDidChange(_ notification: Notification) {
+        let selectedRow = outlineView.selectedRow
+        guard selectedRow >= 0,
+              let node = outlineView.item(atRow: selectedRow) as? FileTreeNode,
+              !node.isDirectory else { return }
+        delegate?.fileTreeView(self, didSelectFileAt: node.url.path)
+    }
 }
 
 // MARK: - File Tree Cell View
@@ -214,6 +229,8 @@ extension FileTreeView: NSOutlineViewDelegate {
 private class FileTreeCellView: NSView {
     private let iconView = NSImageView()
     private let nameLabel = NSTextField(labelWithString: "")
+    private var trackingArea: NSTrackingArea?
+    private var isHovered = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -223,6 +240,28 @@ private class FileTreeCellView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingArea { removeTrackingArea(existing) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        iconView.alphaValue = 1.0
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        iconView.alphaValue = 0.5
     }
 
     private func setupSubviews() {
@@ -256,14 +295,20 @@ private class FileTreeCellView: NSView {
     func configure(node: FileTreeNode) {
         nameLabel.stringValue = node.name
 
-        let symbolName = node.isDirectory ? "folder" : "doc"
+        let info: FileIconInfo
+        if node.isDirectory {
+            info = FileIconInfo.directory
+        } else {
+            info = FileIconInfo.forFile(named: node.name)
+        }
         iconView.image = NSImage(
-            systemSymbolName: symbolName,
+            systemSymbolName: info.symbolName,
             accessibilityDescription: nil
         )?.withSymbolConfiguration(
             NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
         )
-        iconView.contentTintColor = node.isDirectory ? Theme.tertiaryText : Theme.quaternaryText
+        iconView.contentTintColor = info.color
+        iconView.alphaValue = 0.5
         nameLabel.textColor = node.isDirectory ? Theme.secondaryText : Theme.tertiaryText
     }
 }

@@ -28,6 +28,7 @@ class SplitContainerView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = Theme.background.cgColor
+        layer?.masksToBounds = true
         NotificationCenter.default.addObserver(
             self, selector: #selector(themeDidChange),
             name: Theme.didChangeNotification, object: nil
@@ -283,6 +284,15 @@ class SplitContainerView: NSView {
 
     func pane(for id: UUID) -> TerminalPane? {
         return paneViews[id]
+    }
+
+    /// Look up a pane in both active views and the session cache (for inactive sessions).
+    func paneIncludingCache(for id: UUID) -> TerminalPane? {
+        if let pane = paneViews[id] { return pane }
+        for (_, cached) in sessionPaneCache {
+            if let pane = cached[id] { return pane }
+        }
+        return nil
     }
 
     func swapPanes(source: UUID, target: UUID) {

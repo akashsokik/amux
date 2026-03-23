@@ -2,22 +2,47 @@ import Darwin
 import Foundation
 
 enum ProcessHelper {
-    /// Get PIDs of direct child processes of this app.
+    /// Get PIDs of shell processes spawned by this app.
+    /// Ghostty spawns `login` as a direct child, which then spawns the actual
+    /// shell. This method returns the shell PIDs (grandchildren through login)
+    /// as well as any direct children that are not login processes.
     static func childPids() -> [pid_t] {
         let parent = ProcessInfo.processInfo.processIdentifier
-        var name: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL]
+        let allProcs = allProcesses()
+
+        let directChildren = allProcs
+            .filter { $0.kp_eproc.e_ppid == parent }
+            .map { $0.kp_proc.p_pid }
+
+        var result: [pid_t] = []
+        for childPid in directChildren {
+            let childName = name(of: childPid)
+            if childName == "login" {
+                // login is an intermediary -- return its children (the actual shells)
+                let grandchildren = allProcs
+                    .filter { $0.kp_eproc.e_ppid == childPid }
+                    .map { $0.kp_proc.p_pid }
+                result.append(contentsOf: grandchildren)
+            } else {
+                result.append(childPid)
+            }
+        }
+        return result
+    }
+
+    /// Snapshot of all processes via sysctl.
+    private static func allProcesses() -> [kinfo_proc] {
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL]
         var size: Int = 0
-        sysctl(&name, UInt32(name.count), nil, &size, nil, 0)
+        sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0)
         guard size > 0 else { return [] }
 
         let count = size / MemoryLayout<kinfo_proc>.stride
         var procs = [kinfo_proc](repeating: kinfo_proc(), count: count)
-        sysctl(&name, UInt32(name.count), &procs, &size, nil, 0)
+        sysctl(&mib, UInt32(mib.count), &procs, &size, nil, 0)
 
         let actualCount = size / MemoryLayout<kinfo_proc>.stride
-        return procs.prefix(actualCount)
-            .filter { $0.kp_eproc.e_ppid == parent }
-            .map { $0.kp_proc.p_pid }
+        return Array(procs.prefix(actualCount))
     }
 
     /// Get the name of a process (e.g. "fish", "vim", "cargo").
@@ -29,26 +54,25 @@ enum ProcessHelper {
         return String(cString: buffer)
     }
 
-    /// Get the foreground process of a shell by finding the youngest descendant.
+    /// Get the foreground process of a shell by walking the process tree to the deepest descendant.
+    /// Returns nil if the shell has no children (idle at prompt).
     static func foregroundChild(of shellPid: pid_t) -> pid_t? {
-        let allPids = childPidsOf(shellPid)
-        // Return the last (most recently spawned) child, which is likely the foreground process
-        return allPids.last
+        let allProcs = allProcesses()
+        var current = shellPid
+        while true {
+            let children = allProcs
+                .filter { $0.kp_eproc.e_ppid == current }
+                .map { $0.kp_proc.p_pid }
+            guard let last = children.last else {
+                return current == shellPid ? nil : current
+            }
+            current = last
+        }
     }
 
     /// Get direct child PIDs of a specific process.
     private static func childPidsOf(_ parent: pid_t) -> [pid_t] {
-        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_ALL]
-        var size: Int = 0
-        sysctl(&mib, UInt32(mib.count), nil, &size, nil, 0)
-        guard size > 0 else { return [] }
-
-        let count = size / MemoryLayout<kinfo_proc>.stride
-        var procs = [kinfo_proc](repeating: kinfo_proc(), count: count)
-        sysctl(&mib, UInt32(mib.count), &procs, &size, nil, 0)
-
-        let actualCount = size / MemoryLayout<kinfo_proc>.stride
-        return procs.prefix(actualCount)
+        return allProcesses()
             .filter { $0.kp_eproc.e_ppid == parent }
             .map { $0.kp_proc.p_pid }
     }

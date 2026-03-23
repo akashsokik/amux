@@ -34,6 +34,16 @@ class TerminalPane: NSView {
     let paneID: UUID
     weak var delegate: TerminalPaneDelegate?
 
+    // MARK: - Status file
+
+    private static let statusDir: String = {
+        let dir = "/tmp/amux-\(ProcessInfo.processInfo.processIdentifier)"
+        try? FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+        return dir
+    }()
+
+    private(set) var statusFilePath: String?
+
     // MARK: - Tab state
 
     private(set) var tabs: [PaneTab] = []
@@ -73,13 +83,6 @@ class TerminalPane: NSView {
 
     /// Public read-only access to the shell PID (used for status polling).
     var shellProcessID: pid_t? { shellPid }
-
-    /// Retry shell PID discovery if it hasn't been found yet.
-    /// Called by status polling when shellPid is nil.
-    func retryShellPidDiscovery() {
-        guard shellPid == nil else { return }
-        _ = discoverShellPidByName()
-    }
 
     // MARK: - Terminal view accessors
 
@@ -121,6 +124,9 @@ class TerminalPane: NSView {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        if let path = statusFilePath {
+            try? FileManager.default.removeItem(atPath: path)
+        }
     }
 
     @objc private func themeDidChange() {
@@ -196,7 +202,11 @@ class TerminalPane: NSView {
            let ghosttyApp = appDelegate.ghosttyApp,
            let app = ghosttyApp.app {
             let pidsBefore = Set(ProcessHelper.childPids())
+            let statusPath = "\(TerminalPane.statusDir)/\(paneID.uuidString)"
+            self.statusFilePath = statusPath
+            setenv("AMUX_STATUS_FILE", statusPath, 1)
             tv.createSurface(app: app)
+            unsetenv("AMUX_STATUS_FILE")
             // Discover shell PID for the new tab (with retries for fish etc.)
             discoverShellPid(pidsBefore: pidsBefore, attempt: 0)
         }
@@ -417,9 +427,13 @@ class TerminalPane: NSView {
            let ghosttyApp = appDelegate.ghosttyApp,
            let app = ghosttyApp.app {
             let pidsBefore = Set(ProcessHelper.childPids())
+            let statusPath = "\(TerminalPane.statusDir)/\(paneID.uuidString)"
+            self.statusFilePath = statusPath
+            setenv("AMUX_STATUS_FILE", statusPath, 1)
             for (_, tv) in terminalViewsByTab where tv.surface == nil {
                 tv.createSurface(app: app)
             }
+            unsetenv("AMUX_STATUS_FILE")
             // Discover the shell PID spawned by the new surface.
             // Use retries with increasing delays to handle shells like fish
             // that may take longer to appear in the process table.

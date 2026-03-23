@@ -6,7 +6,7 @@ class WorktreeView: NSView {
     private var tableView: NSTableView!
     private var scrollView: NSScrollView!
     private var headerLabel: NSTextField!
-    private var addButton: NSButton!
+    private var addButton: DimIconButton!
     private var emptyLabel: NSTextField!
     private var worktrees: [GitHelper.WorktreeInfo] = []
     private var currentCwd: String?
@@ -44,7 +44,7 @@ class WorktreeView: NSView {
         headerLabel.textColor = Theme.primaryText
         emptyLabel.font = Theme.Fonts.body(size: 12)
         emptyLabel.textColor = Theme.tertiaryText
-        addButton.contentTintColor = Theme.secondaryText
+        addButton.refreshDimState()
         tableView.reloadData()
     }
 
@@ -68,15 +68,15 @@ class WorktreeView: NSView {
         addSubview(headerLabel)
 
         // Add button
-        addButton = NSButton(image: NSImage(
+        addButton = DimIconButton(image: NSImage(
             systemSymbolName: "plus",
             accessibilityDescription: "Add worktree"
         )!, target: self, action: #selector(addWorktreeClicked))
         addButton.translatesAutoresizingMaskIntoConstraints = false
         addButton.isBordered = false
         addButton.bezelStyle = .inline
-        addButton.contentTintColor = Theme.secondaryText
         addButton.setContentHuggingPriority(.required, for: .horizontal)
+        addButton.refreshDimState()
         addSubview(addButton)
 
         // Empty state label
@@ -325,6 +325,8 @@ private class WorktreeCellView: NSView {
     private let iconView = NSImageView()
     private let branchLabel = NSTextField(labelWithString: "")
     private let pathLabel = NSTextField(labelWithString: "")
+    private var trackingArea: NSTrackingArea?
+    private var isHovered = false
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -334,6 +336,28 @@ private class WorktreeCellView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingArea { removeTrackingArea(existing) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        iconView.alphaValue = 1.0
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        iconView.alphaValue = 0.5
     }
 
     private func setupSubviews() {
@@ -401,5 +425,6 @@ private class WorktreeCellView: NSView {
             NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
         )
         iconView.contentTintColor = worktree.isCurrent ? Theme.primary : Theme.tertiaryText
+        iconView.alphaValue = worktree.isCurrent ? 1.0 : 0.5
     }
 }

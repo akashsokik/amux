@@ -1,14 +1,30 @@
 import Foundation
 import AppKit
 
+enum PaneStatus {
+    case idle
+    case running
+    case success
+    case error
+}
+
 class Session: ObservableObject, Identifiable {
     let id: UUID
     @Published var name: String
     @Published var splitTree: SplitTree
     @Published var focusedPaneID: UUID?
-    @Published var hasActivity: Bool
+    @Published var paneStatus: PaneStatus
     let createdAt: Date
     let colorHex: String
+
+    var statusColor: NSColor {
+        switch paneStatus {
+        case .idle:    return Theme.quaternaryText
+        case .running: return Theme.primary
+        case .success: return NSColor(srgbRed: 0.596, green: 0.765, blue: 0.475, alpha: 1.0)
+        case .error:   return NSColor(srgbRed: 0.878, green: 0.424, blue: 0.459, alpha: 1.0)
+        }
+    }
 
     init(name: String, colorHex: String? = nil) {
         self.id = UUID()
@@ -16,7 +32,7 @@ class Session: ObservableObject, Identifiable {
         self.colorHex = colorHex ?? Session.randomColorHex()
         let tree = SplitTree()
         self.splitTree = tree
-        self.hasActivity = false
+        self.paneStatus = .idle
         self.createdAt = Date()
         self.focusedPaneID = tree.root?.id
     }
@@ -27,7 +43,7 @@ class Session: ObservableObject, Identifiable {
         self.name = name
         self.splitTree = splitTree
         self.focusedPaneID = focusedPaneID
-        self.hasActivity = false
+        self.paneStatus = .idle
         self.createdAt = createdAt
         self.colorHex = colorHex
     }

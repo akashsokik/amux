@@ -30,7 +30,10 @@ class PaneCountSegment: StatusBarSegment {
         valueLabel.isEditable = false
         valueLabel.isSelectable = false
 
-        let stack = NSStackView(views: [iconView, valueLabel])
+        iconView.alphaValue = 0.5
+
+        let stack = HoverableSegmentStack(views: [iconView, valueLabel])
+        stack.segmentIcon = iconView
         stack.orientation = .horizontal
         stack.spacing = 3
         stack.alignment = .centerY

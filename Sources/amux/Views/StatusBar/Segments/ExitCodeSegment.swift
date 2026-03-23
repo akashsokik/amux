@@ -9,7 +9,7 @@ class ExitCodeSegment: StatusBarSegment {
 
     private let valueLabel = NSTextField(labelWithString: "")
     private let iconView = NSImageView()
-    private let stack = NSStackView()
+    private let stack = HoverableSegmentStack()
     private var lastExitCode: Int32 = 0
 
     func render() -> NSView {
@@ -21,6 +21,7 @@ class ExitCodeSegment: StatusBarSegment {
             accessibilityDescription: "Exit Code"
         )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .medium))
         iconView.contentTintColor = red
+        iconView.alphaValue = 0.5
         iconView.widthAnchor.constraint(equalToConstant: 12).isActive = true
         iconView.heightAnchor.constraint(equalToConstant: 12).isActive = true
 
@@ -36,6 +37,7 @@ class ExitCodeSegment: StatusBarSegment {
         stack.alignment = .centerY
         stack.addArrangedSubview(iconView)
         stack.addArrangedSubview(valueLabel)
+        stack.segmentIcon = iconView
         stack.isHidden = true
         return stack
     }

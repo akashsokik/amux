@@ -7,6 +7,7 @@ protocol SidebarViewDelegate: AnyObject {
     func sidebarDidRequestRenameSession(_ session: Session)
     func sidebarCurrentDirectory() -> String?
     func sidebarDidRequestOpenWorktree(path: String)
+    func sidebarDidSelectFile(path: String)
 }
 
 enum SidebarMode {
@@ -27,16 +28,16 @@ class SidebarView: NSView {
 
     // Icon tab bar
     private var iconBar: NSView!
-    private var sessionsButton: NSButton!
-    private var fileTreeButton: NSButton!
+    private var sessionsButton: DimIconButton!
+    private var fileTreeButton: DimIconButton!
     private var iconBarSeparator: NSView!
 
     // File tree
     private var fileTreeView: FileTreeView!
 
     // Worktree & Git status
-    private var worktreeButton: NSButton!
-    private var gitStatusButton: NSButton!
+    private var worktreeButton: DimIconButton!
+    private var gitStatusButton: DimIconButton!
     private var worktreeView: WorktreeView!
     private var gitStatusView: GitStatusView!
 
@@ -63,10 +64,10 @@ class SidebarView: NSView {
         layer?.backgroundColor = Theme.sidebarBg.cgColor
         headerLabel.textColor = Theme.tertiaryText
         separatorLine.layer?.backgroundColor = Theme.outlineVariant.cgColor
-        sessionsButton.contentTintColor = mode == .sessions ? Theme.primaryText : Theme.quaternaryText
-        fileTreeButton.contentTintColor = mode == .fileTree ? Theme.primaryText : Theme.quaternaryText
-        worktreeButton.contentTintColor = mode == .worktrees ? Theme.primaryText : Theme.quaternaryText
-        gitStatusButton.contentTintColor = mode == .gitStatus ? Theme.primaryText : Theme.quaternaryText
+        sessionsButton.isActiveState = mode == .sessions
+        fileTreeButton.isActiveState = mode == .fileTree
+        worktreeButton.isActiveState = mode == .worktrees
+        gitStatusButton.isActiveState = mode == .gitStatus
         tableView.reloadData()
     }
 
@@ -97,19 +98,16 @@ class SidebarView: NSView {
         addSubview(iconBar)
 
         sessionsButton = makeIconBarButton(symbolName: "terminal", action: #selector(sessionsButtonClicked))
-        sessionsButton.contentTintColor = Theme.primaryText
+        sessionsButton.isActiveState = true
         iconBar.addSubview(sessionsButton)
 
         fileTreeButton = makeIconBarButton(symbolName: "folder", action: #selector(fileTreeButtonClicked))
-        fileTreeButton.contentTintColor = Theme.quaternaryText
         iconBar.addSubview(fileTreeButton)
 
         worktreeButton = makeIconBarButton(symbolName: "arrow.triangle.branch", action: #selector(worktreeButtonClicked))
-        worktreeButton.contentTintColor = Theme.quaternaryText
         iconBar.addSubview(worktreeButton)
 
         gitStatusButton = makeIconBarButton(symbolName: "chart.bar.doc.horizontal", action: #selector(gitStatusButtonClicked))
-        gitStatusButton.contentTintColor = Theme.quaternaryText
         iconBar.addSubview(gitStatusButton)
 
         NSLayoutConstraint.activate([
@@ -141,8 +139,8 @@ class SidebarView: NSView {
         addSubview(iconBarSeparator)
     }
 
-    private func makeIconBarButton(symbolName: String, action: Selector) -> NSButton {
-        let button = NSButton()
+    private func makeIconBarButton(symbolName: String, action: Selector) -> DimIconButton {
+        let button = DimIconButton()
         button.translatesAutoresizingMaskIntoConstraints = false
         button.title = ""
         button.image = NSImage(
@@ -156,9 +154,7 @@ class SidebarView: NSView {
         button.isBordered = false
         button.target = self
         button.action = action
-        if let cell = button.cell as? NSButtonCell {
-            cell.highlightsBy = .contentsCellMask
-        }
+        button.refreshDimState()
         return button
     }
 
@@ -166,6 +162,7 @@ class SidebarView: NSView {
         fileTreeView = FileTreeView(frame: .zero)
         fileTreeView.translatesAutoresizingMaskIntoConstraints = false
         fileTreeView.isHidden = true
+        fileTreeView.delegate = self
         addSubview(fileTreeView)
     }
 
@@ -312,10 +309,10 @@ class SidebarView: NSView {
 
     private func setMode(_ newMode: SidebarMode) {
         mode = newMode
-        sessionsButton.contentTintColor = mode == .sessions ? Theme.primaryText : Theme.quaternaryText
-        fileTreeButton.contentTintColor = mode == .fileTree ? Theme.primaryText : Theme.quaternaryText
-        worktreeButton.contentTintColor = mode == .worktrees ? Theme.primaryText : Theme.quaternaryText
-        gitStatusButton.contentTintColor = mode == .gitStatus ? Theme.primaryText : Theme.quaternaryText
+        sessionsButton.isActiveState = mode == .sessions
+        fileTreeButton.isActiveState = mode == .fileTree
+        worktreeButton.isActiveState = mode == .worktrees
+        gitStatusButton.isActiveState = mode == .gitStatus
 
         headerLabel.isHidden = mode != .sessions
         scrollView.isHidden = mode != .sessions
@@ -440,6 +437,14 @@ extension SidebarView: NSMenuDelegate {
     }
 }
 
+// MARK: - FileTreeViewDelegate
+
+extension SidebarView: FileTreeViewDelegate {
+    func fileTreeView(_ view: FileTreeView, didSelectFileAt path: String) {
+        delegate?.sidebarDidSelectFile(path: path)
+    }
+}
+
 // MARK: - Session Cell View
 
 private class SessionCellView: NSView {
@@ -521,7 +526,7 @@ private class SessionCellView: NSView {
         isActiveSession = isActive
         nameLabel.stringValue = session.name
 
-        colorDot.layer?.backgroundColor = session.color.cgColor
+        colorDot.layer?.backgroundColor = session.statusColor.cgColor
 
         nameLabel.textColor = isActive ? Theme.primaryText : Theme.secondaryText
         nameLabel.font = isActive ? Theme.Fonts.headline(size: 13) : Theme.Fonts.body(size: 13)

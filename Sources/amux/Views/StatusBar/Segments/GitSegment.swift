@@ -7,7 +7,7 @@ class GitSegment: StatusBarSegment {
     let position = SegmentPosition.right
     let refreshInterval: TimeInterval = 5.0  // git dirty check still polls
 
-    private let container = NSStackView()
+    private let container = HoverableSegmentStack()
     private let dirtyDot = NSView()
     private let branchIcon = NSImageView()
     private let branchLabel = NSTextField(labelWithString: "")
@@ -30,6 +30,7 @@ class GitSegment: StatusBarSegment {
             accessibilityDescription: "Branch"
         )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .medium))
         branchIcon.contentTintColor = dim
+        branchIcon.alphaValue = 0.5
         branchIcon.widthAnchor.constraint(equalToConstant: 10).isActive = true
         branchIcon.heightAnchor.constraint(equalToConstant: 10).isActive = true
 
@@ -48,6 +49,7 @@ class GitSegment: StatusBarSegment {
         container.addArrangedSubview(dirtyDot)
         container.addArrangedSubview(branchIcon)
         container.addArrangedSubview(branchLabel)
+        container.segmentIcon = branchIcon
 
         return container
     }

@@ -47,9 +47,16 @@ cat > "$CONTENTS_DIR/Info.plist" << 'PLIST'
     <string>NSApplication</string>
     <key>NSHighResolutionCapable</key>
     <true/>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
 </dict>
 </plist>
 PLIST
+
+# Copy app icon
+if [ -f "$SCRIPT_DIR/Resources/AppIcon.icns" ]; then
+    cp "$SCRIPT_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/"
+fi
 
 # Copy Ghostty shell integration resources (enables OSC 7/133 for all shells)
 GHOSTTY_RES="$RESOURCES_DIR/ghostty/shell-integration"
@@ -61,6 +68,14 @@ for shell_dir in bash zsh fish elvish nushell; do
     fi
 done
 
+# Copy amux shell integration scripts (status indicators for sidebar)
+AMUX_SHELL_INTEG="$RESOURCES_DIR/shell-integration"
+mkdir -p "$AMUX_SHELL_INTEG"
+AMUX_SHELL_SRC="$SCRIPT_DIR/Resources/shell-integration"
+if [ -d "$AMUX_SHELL_SRC" ]; then
+    cp -R "$AMUX_SHELL_SRC"/* "$AMUX_SHELL_INTEG/"
+fi
+
 # Copy terminfo sentinel (helps Ghostty auto-detect resources dir)
 TERMINFO_SRC="$SCRIPT_DIR/vendor/ghostty-dist/terminfo"
 if [ -d "$TERMINFO_SRC" ]; then
@@ -69,5 +84,5 @@ fi
 
 echo "Built amux.app"
 
-# Launch
-open "$APP_DIR"
+# Launch (pass current PATH so Homebrew binaries like starship are found)
+open --env PATH="$PATH" "$APP_DIR"

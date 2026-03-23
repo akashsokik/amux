@@ -33,7 +33,10 @@ class ProcessSegment: StatusBarSegment {
         nameLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         nameLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 80).isActive = true
 
-        let stack = NSStackView(views: [iconView, nameLabel])
+        iconView.alphaValue = 0.5
+
+        let stack = HoverableSegmentStack(views: [iconView, nameLabel])
+        stack.segmentIcon = iconView
         stack.orientation = .horizontal
         stack.spacing = 3
         stack.alignment = .centerY

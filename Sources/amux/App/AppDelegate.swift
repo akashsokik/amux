@@ -9,6 +9,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Application Lifecycle
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Start new terminals in home directory, not wherever the app was launched from
+        FileManager.default.changeCurrentDirectoryPath(NSHomeDirectory())
+
         Theme.registerFonts()
         // Initialize ThemeManager before GhosttyApp so colors are ready
         _ = ThemeManager.shared
@@ -330,6 +333,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let toggleSidebarItem = NSMenuItem(title: "Toggle Sidebar", action: #selector(toggleSidebar(_:)), keyEquivalent: "\\")
         toggleSidebarItem.target = self
         viewMenu.addItem(toggleSidebarItem)
+
+        let toggleEditorItem = NSMenuItem(title: "Toggle Editor Sidebar", action: #selector(toggleEditorSidebar(_:)), keyEquivalent: "E")
+        toggleEditorItem.keyEquivalentModifierMask = [.command, .shift]
+        toggleEditorItem.target = self
+        viewMenu.addItem(toggleEditorItem)
+
+        let saveEditorItem = NSMenuItem(title: "Save Editor File", action: #selector(saveEditorFile(_:)), keyEquivalent: "s")
+        saveEditorItem.keyEquivalentModifierMask = [.command, .shift]
+        saveEditorItem.target = self
+        viewMenu.addItem(saveEditorItem)
+
         viewMenu.addItem(NSMenuItem.separator())
         let increaseFontItem = NSMenuItem(title: "Increase Font Size", action: #selector(increaseFontSize(_:)), keyEquivalent: "+")
         increaseFontItem.target = self
@@ -408,6 +422,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             PaletteCommand(name: "Navigate Left", shortcut: "Cmd+Shift+Left", icon: "arrow.left") { [weak self] in self?.navigateLeft(nil) },
             PaletteCommand(name: "Navigate Right", shortcut: "Cmd+Shift+Right", icon: "arrow.right") { [weak self] in self?.navigateRight(nil) },
             PaletteCommand(name: "Toggle Sidebar", shortcut: "Cmd+\\", icon: "sidebar.left") { [weak self] in self?.toggleSidebar(nil) },
+            PaletteCommand(name: "Toggle Editor Sidebar", shortcut: "Cmd+Shift+E", icon: "sidebar.right") { [weak self] in self?.toggleEditorSidebar(nil) },
             PaletteCommand(name: "Increase Font Size", shortcut: "Cmd++", icon: "plus.magnifyingglass") { [weak self] in self?.increaseFontSize(nil) },
             PaletteCommand(name: "Decrease Font Size", shortcut: "Cmd+-", icon: "minus.magnifyingglass") { [weak self] in self?.decreaseFontSize(nil) },
             PaletteCommand(name: "Reset Font Size", shortcut: "Cmd+0", icon: "1.magnifyingglass") { [weak self] in self?.resetFontSize(nil) },
@@ -543,14 +558,27 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func closeTab(_ sender: Any?) {
+        if windowController.isEditorSidebarVisible,
+           windowController.editorSidebarView.hasOpenTabs,
+           windowController.editorSidebarView.handlesTabShortcuts(in: windowController.window) {
+            windowController.editorSidebarView.closeCurrentTab()
+            return
+        }
+
         guard let session = sessionManager.activeSession,
               let focusedID = session.focusedPaneID,
               let pane = windowController.splitContainerView.pane(for: focusedID) else { return }
         pane.closeActiveTab()
-        // If last tab, pane fires terminalPaneProcessTerminated via delegate cascade
     }
 
     @objc private func nextTab(_ sender: Any?) {
+        if windowController.isEditorSidebarVisible,
+           windowController.editorSidebarView.hasOpenTabs,
+           windowController.editorSidebarView.handlesTabShortcuts(in: windowController.window) {
+            windowController.editorSidebarView.selectNextTab()
+            return
+        }
+
         guard let session = sessionManager.activeSession,
               let focusedID = session.focusedPaneID,
               let pane = windowController.splitContainerView.pane(for: focusedID) else { return }
@@ -558,6 +586,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func previousTab(_ sender: Any?) {
+        if windowController.isEditorSidebarVisible,
+           windowController.editorSidebarView.hasOpenTabs,
+           windowController.editorSidebarView.handlesTabShortcuts(in: windowController.window) {
+            windowController.editorSidebarView.selectPreviousTab()
+            return
+        }
+
         guard let session = sessionManager.activeSession,
               let focusedID = session.focusedPaneID,
               let pane = windowController.splitContainerView.pane(for: focusedID) else { return }
@@ -654,6 +689,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleSidebar(_ sender: Any?) {
         windowController.toggleSidebar()
+    }
+
+    @objc private func toggleEditorSidebar(_ sender: Any?) {
+        windowController.toggleEditorSidebar()
+    }
+
+    @objc private func saveEditorFile(_ sender: Any?) {
+        guard windowController.isEditorSidebarVisible else { return }
+        windowController.editorSidebarView.saveActiveTab()
     }
 
     @objc private func findInTerminal(_ sender: Any?) {

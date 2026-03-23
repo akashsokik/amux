@@ -118,8 +118,11 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         cfg.scale_factor = Double(self.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0)
         cfg.font_size = 0 // Use config default
         cfg.context = GHOSTTY_SURFACE_CONTEXT_SPLIT
+        let homeCStr = strdup(NSHomeDirectory())
+        cfg.working_directory = UnsafePointer(homeCStr)
 
         let surface = ghostty_surface_new(app, &cfg)
+        free(homeCStr)
         guard let surface = surface else {
             print("[GhosttyTerminalView] ghostty_surface_new failed for pane \(paneID)")
             return

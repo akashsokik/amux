@@ -8,7 +8,7 @@ class GitStatusView: NSView {
     private var headerLabel: NSTextField!
     private var aheadLabel: NSTextField!
     private var behindLabel: NSTextField!
-    private var refreshButton: NSButton!
+    private var refreshButton: DimIconButton!
     private var emptyLabel: NSTextField!
 
     private var currentCwd: String?
@@ -56,7 +56,7 @@ class GitStatusView: NSView {
         behindLabel.textColor = Theme.tertiaryText
         emptyLabel.font = Theme.Fonts.body(size: 12)
         emptyLabel.textColor = Theme.tertiaryText
-        refreshButton.contentTintColor = Theme.tertiaryText
+        refreshButton.refreshDimState()
         outlineView.reloadData()
     }
 
@@ -114,11 +114,11 @@ class GitStatusView: NSView {
         )?.withSymbolConfiguration(
             NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
         )
-        refreshButton = NSButton(image: refreshImage ?? NSImage(), target: self, action: #selector(refreshClicked))
+        refreshButton = DimIconButton(image: refreshImage ?? NSImage(), target: self, action: #selector(refreshClicked))
         refreshButton.translatesAutoresizingMaskIntoConstraints = false
         refreshButton.bezelStyle = .inline
         refreshButton.isBordered = false
-        refreshButton.contentTintColor = Theme.tertiaryText
+        refreshButton.refreshDimState()
         addSubview(refreshButton)
 
         // Empty state label

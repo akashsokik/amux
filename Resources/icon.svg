@@ -1,0 +1,46 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1a1a2e"/>
+      <stop offset="100%" stop-color="#0d0d1a"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="228" ry="228" fill="url(#bg)"/>
+  <!--
+    Blocky pixel-art "A" on a 7x5 grid, perfectly centered.
+    Grid: 7 cols x 5 rows, cell=76x88, gap=10
+    Total: 592x480, centered at 512,512
+    startX=216, startY=272, strideX=86, strideY=98
+  -->
+  <g fill="#e2e8f0">
+    <!-- Row 0: .#####. (top bar) -->
+    <rect x="302" y="272" width="76" height="88" rx="4"/>
+    <rect x="388" y="272" width="76" height="88" rx="4"/>
+    <rect x="474" y="272" width="76" height="88" rx="4"/>
+    <rect x="560" y="272" width="76" height="88" rx="4"/>
+    <rect x="646" y="272" width="76" height="88" rx="4"/>
+    <!-- Row 1: ##...## (sides) -->
+    <rect x="216" y="370" width="76" height="88" rx="4"/>
+    <rect x="302" y="370" width="76" height="88" rx="4"/>
+    <rect x="646" y="370" width="76" height="88" rx="4"/>
+    <rect x="732" y="370" width="76" height="88" rx="4"/>
+    <!-- Row 2: ####### (middle bar) -->
+    <rect x="216" y="468" width="76" height="88" rx="4"/>
+    <rect x="302" y="468" width="76" height="88" rx="4"/>
+    <rect x="388" y="468" width="76" height="88" rx="4"/>
+    <rect x="474" y="468" width="76" height="88" rx="4"/>
+    <rect x="560" y="468" width="76" height="88" rx="4"/>
+    <rect x="646" y="468" width="76" height="88" rx="4"/>
+    <rect x="732" y="468" width="76" height="88" rx="4"/>
+    <!-- Row 3: ##...## (sides) -->
+    <rect x="216" y="566" width="76" height="88" rx="4"/>
+    <rect x="302" y="566" width="76" height="88" rx="4"/>
+    <rect x="646" y="566" width="76" height="88" rx="4"/>
+    <rect x="732" y="566" width="76" height="88" rx="4"/>
+    <!-- Row 4: ##...## (sides) -->
+    <rect x="216" y="664" width="76" height="88" rx="4"/>
+    <rect x="302" y="664" width="76" height="88" rx="4"/>
+    <rect x="646" y="664" width="76" height="88" rx="4"/>
+    <rect x="732" y="664" width="76" height="88" rx="4"/>
+  </g>
+</svg>

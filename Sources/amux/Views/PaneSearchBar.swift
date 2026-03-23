@@ -10,9 +10,9 @@ class PaneSearchBar: NSView {
 
     private var searchField: NSTextField!
     private var matchLabel: NSTextField!
-    private var prevButton: NSButton!
-    private var nextButton: NSButton!
-    private var closeButton: NSButton!
+    private var prevButton: DimIconButton!
+    private var nextButton: DimIconButton!
+    private var closeButton: DimIconButton!
 
     private var surface: ghostty_surface_t?
 
@@ -99,8 +99,8 @@ class PaneSearchBar: NSView {
         ])
     }
 
-    private func makeButton(symbolName: String, action: Selector) -> NSButton {
-        let btn = NSButton()
+    private func makeButton(symbolName: String, action: Selector) -> DimIconButton {
+        let btn = DimIconButton()
         btn.translatesAutoresizingMaskIntoConstraints = false
         btn.title = ""
         btn.image = NSImage(
@@ -112,12 +112,9 @@ class PaneSearchBar: NSView {
         btn.imagePosition = .imageOnly
         btn.bezelStyle = .accessoryBarAction
         btn.isBordered = false
-        btn.contentTintColor = Theme.tertiaryText
         btn.target = self
         btn.action = action
-        if let cell = btn.cell as? NSButtonCell {
-            cell.highlightsBy = .contentsCellMask
-        }
+        btn.refreshDimState()
         return btn
     }
 

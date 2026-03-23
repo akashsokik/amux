@@ -18,7 +18,9 @@ let package = Package(
 
         .executableTarget(
             name: "amux",
-            dependencies: ["CGhostty"],
+            dependencies: [
+                "CGhostty",
+            ],
             path: "Sources/amux",
             resources: [
                 .copy("../../Resources/Fonts"),

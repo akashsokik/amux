@@ -4,7 +4,74 @@ import CGhostty
 private extension NSToolbarItem.Identifier {
     static let sidebarToggle = NSToolbarItem.Identifier("sidebarToggle")
     static let flexSpace = NSToolbarItem.Identifier.flexibleSpace
+    static let editorToggle = NSToolbarItem.Identifier("editorToggle")
     static let actions = NSToolbarItem.Identifier("actions")
+}
+
+private final class ToolbarIconButton: NSButton {
+    private var trackingArea: NSTrackingArea?
+    private var isHovered = false {
+        didSet { updateAppearance() }
+    }
+
+    override var isHighlighted: Bool {
+        didSet { updateAppearance() }
+    }
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        setButtonType(.momentaryChange)
+        isBordered = false
+        imagePosition = .imageOnly
+        wantsLayer = true
+        focusRingType = .none
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError()
+    }
+
+    func refreshTheme() {
+        updateAppearance()
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingArea {
+            removeTrackingArea(existing)
+        }
+
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingArea = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+    }
+
+    private func updateAppearance() {
+        if isHighlighted {
+            contentTintColor = Theme.primaryText
+            alphaValue = 1.0
+        } else if isHovered {
+            contentTintColor = Theme.secondaryText
+            alphaValue = 1.0
+        } else {
+            contentTintColor = Theme.quaternaryText
+            alphaValue = 0.5
+        }
+    }
 }
 
 class MainWindowController: NSWindowController {
@@ -15,8 +82,19 @@ class MainWindowController: NSWindowController {
     private var sidebarLeadingConstraint: NSLayoutConstraint!
     private var resizeHandle: SidebarResizeHandle!
 
+    // Editor sidebar (right side, mirrors left sidebar pattern)
+    private(set) var editorSidebarView: EditorSidebarView!
+    private var editorSidebarWidthConstraint: NSLayoutConstraint!
+    private var editorSidebarTrailingConstraint: NSLayoutConstraint!
+    private var editorResizeHandle: SidebarResizeHandle!
+
+    private(set) var isEditorSidebarVisible = false
+    private var editorSidebarWidth: CGFloat = 420
+    private let minEditorSidebarWidth: CGFloat = 250
+    private let maxEditorSidebarWidth: CGFloat = 500
+
     private let sessionManager: SessionManager
-    private var toolbarButtons: [NSButton] = []
+    private var toolbarButtons: [ToolbarIconButton] = []
     private var statusPollTimer: Timer?
 
     private(set) var isSidebarVisible = true
@@ -56,7 +134,7 @@ class MainWindowController: NSWindowController {
         window?.backgroundColor = Theme.background
         window?.contentView?.layer?.backgroundColor = Theme.background.cgColor
         for button in toolbarButtons {
-            button.contentTintColor = Theme.secondaryText
+            button.refreshTheme()
         }
     }
 
@@ -122,14 +200,16 @@ class MainWindowController: NSWindowController {
         // so views pinned to it won't overlap the toolbar.
         guard let layoutGuide = window?.contentLayoutGuide as? NSLayoutGuide else { return }
 
+        // The split container hosts Metal-backed terminal surfaces, so it needs to
+        // sit at the back of the z-order or it can paint over sibling views.
+        splitContainerView = SplitContainerView(frame: .zero)
+        splitContainerView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(splitContainerView)
+
         sidebarView = SidebarView(sessionManager: sessionManager)
         sidebarView.translatesAutoresizingMaskIntoConstraints = false
         sidebarView.delegate = self
         contentView.addSubview(sidebarView)
-
-        splitContainerView = SplitContainerView(frame: .zero)
-        splitContainerView.translatesAutoresizingMaskIntoConstraints = false
-        contentView.addSubview(splitContainerView)
 
         globalStatusBar = PaneStatusBar(frame: .zero)
         globalStatusBar.translatesAutoresizingMaskIntoConstraints = false
@@ -145,32 +225,65 @@ class MainWindowController: NSWindowController {
         }
         contentView.addSubview(resizeHandle)
 
+        editorSidebarView = EditorSidebarView(frame: .zero)
+        editorSidebarView.translatesAutoresizingMaskIntoConstraints = false
+        contentView.addSubview(editorSidebarView)
+
+        editorResizeHandle = SidebarResizeHandle()
+        editorResizeHandle.translatesAutoresizingMaskIntoConstraints = false
+        editorResizeHandle.onResize = { [weak self] delta in
+            self?.resizeEditorSidebar(by: -delta)
+        }
+        contentView.addSubview(editorResizeHandle)
+
+        // Left sidebar constraints (leading edge, slides left to hide)
         sidebarLeadingConstraint = sidebarView.leadingAnchor.constraint(
-            equalTo: contentView.leadingAnchor,
-            constant: 0
+            equalTo: contentView.leadingAnchor, constant: 0
         )
         sidebarWidthConstraint = sidebarView.widthAnchor.constraint(equalToConstant: sidebarWidth)
 
+        // Right editor sidebar constraints (trailing edge, slides right to hide)
+        editorSidebarTrailingConstraint = editorSidebarView.trailingAnchor.constraint(
+            equalTo: contentView.trailingAnchor, constant: editorSidebarWidth
+        )
+        editorSidebarWidthConstraint = editorSidebarView.widthAnchor.constraint(equalToConstant: editorSidebarWidth)
+
         NSLayoutConstraint.activate([
+            // Left sidebar
             sidebarLeadingConstraint,
             sidebarWidthConstraint,
             sidebarView.topAnchor.constraint(equalTo: contentView.topAnchor),
             sidebarView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
+            // Left resize handle
             resizeHandle.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -2),
             resizeHandle.topAnchor.constraint(equalTo: contentView.topAnchor),
             resizeHandle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             resizeHandle.widthAnchor.constraint(equalToConstant: 5),
 
-            globalStatusBar.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor),
-            globalStatusBar.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
-            globalStatusBar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-            globalStatusBar.heightAnchor.constraint(equalToConstant: PaneStatusBar.barHeight),
+            // Right editor sidebar
+            editorSidebarTrailingConstraint,
+            editorSidebarWidthConstraint,
+            editorSidebarView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            editorSidebarView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
+            // Right resize handle
+            editorResizeHandle.trailingAnchor.constraint(equalTo: editorSidebarView.leadingAnchor, constant: 2),
+            editorResizeHandle.topAnchor.constraint(equalTo: contentView.topAnchor),
+            editorResizeHandle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            editorResizeHandle.widthAnchor.constraint(equalToConstant: 5),
+
+            // Split container: between the two sidebars
             splitContainerView.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor),
-            splitContainerView.trailingAnchor.constraint(equalTo: contentView.trailingAnchor),
+            splitContainerView.trailingAnchor.constraint(equalTo: editorSidebarView.leadingAnchor),
             splitContainerView.topAnchor.constraint(equalTo: layoutGuide.topAnchor),
             splitContainerView.bottomAnchor.constraint(equalTo: globalStatusBar.topAnchor),
+
+            // Status bar: between the two sidebars
+            globalStatusBar.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor),
+            globalStatusBar.trailingAnchor.constraint(equalTo: editorSidebarView.leadingAnchor),
+            globalStatusBar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            globalStatusBar.heightAnchor.constraint(equalToConstant: PaneStatusBar.barHeight),
         ])
     }
 
@@ -181,6 +294,33 @@ class MainWindowController: NSWindowController {
             .clamped(to: minSidebarWidth...maxSidebarWidth)
         sidebarWidthConstraint.constant = newWidth
         sidebarWidth = newWidth
+    }
+
+    // MARK: - Editor sidebar resize
+
+    private func resizeEditorSidebar(by delta: CGFloat) {
+        let newWidth = (editorSidebarWidthConstraint.constant + delta)
+            .clamped(to: minEditorSidebarWidth...maxEditorSidebarWidth)
+        editorSidebarWidthConstraint.constant = newWidth
+        editorSidebarWidth = newWidth
+    }
+
+    // MARK: - Editor sidebar toggle (mirrors left sidebar pattern)
+
+    func toggleEditorSidebar() {
+        isEditorSidebarVisible.toggle()
+
+        // Mirror of left sidebar: 0 = visible, +editorSidebarWidth = off-screen right
+        let targetTrailing: CGFloat = isEditorSidebarVisible ? 0 : editorSidebarWidth
+
+        NSAnimationContext.runAnimationGroup({ context in
+            context.duration = Theme.Animation.standard
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
+
+            editorSidebarTrailingConstraint.animator().constant = targetTrailing
+            window?.contentView?.layoutSubtreeIfNeeded()
+        })
     }
 
     // MARK: - Sidebar toggle
@@ -208,6 +348,10 @@ class MainWindowController: NSWindowController {
 
     @objc private func toolbarToggleSidebar(_ sender: Any?) {
         toggleSidebar()
+    }
+
+    @objc private func toolbarToggleEditorSidebar(_ sender: Any?) {
+        toggleEditorSidebar()
     }
 
     @objc private func toolbarNewSession(_ sender: Any?) {
@@ -319,21 +463,18 @@ class MainWindowController: NSWindowController {
 // MARK: - NSToolbarDelegate
 
 extension MainWindowController: NSToolbarDelegate {
-    private func makeToolbarButton(symbolName: String, accessibilityDescription: String, action: Selector) -> NSButton {
-        let button = NSButton()
-        button.setButtonType(.momentaryChange)
-        button.isBordered = false
+    private func makeToolbarButton(symbolName: String, accessibilityDescription: String, action: Selector) -> ToolbarIconButton {
+        let button = ToolbarIconButton()
         button.image = NSImage(
             systemSymbolName: symbolName,
             accessibilityDescription: accessibilityDescription
         )?.withSymbolConfiguration(
             NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
         )
-        button.imagePosition = .imageOnly
         button.target = self
         button.action = action
-        button.contentTintColor = Theme.secondaryText
         button.setFrameSize(NSSize(width: 30, height: 24))
+        button.refreshTheme()
         toolbarButtons.append(button)
         return button
     }
@@ -345,6 +486,13 @@ extension MainWindowController: NSToolbarDelegate {
             item.view = makeToolbarButton(symbolName: "sidebar.left", accessibilityDescription: "Toggle Sidebar", action: #selector(toolbarToggleSidebar(_:)))
             item.isBordered = false
             item.label = "Sidebar"
+            return item
+
+        case .editorToggle:
+            let item = NSToolbarItem(itemIdentifier: .editorToggle)
+            item.view = makeToolbarButton(symbolName: "sidebar.right", accessibilityDescription: "Toggle Editor Sidebar", action: #selector(toolbarToggleEditorSidebar(_:)))
+            item.isBordered = false
+            item.label = "Editor"
             return item
 
         case .actions:
@@ -370,6 +518,7 @@ extension MainWindowController: NSToolbarDelegate {
             .sidebarToggle,
             .flexSpace,
             .actions,
+            .editorToggle,
         ]
     }
 
@@ -378,6 +527,7 @@ extension MainWindowController: NSToolbarDelegate {
             .sidebarToggle,
             .flexSpace,
             .actions,
+            .editorToggle,
         ]
     }
 }
@@ -438,6 +588,13 @@ extension MainWindowController: SidebarViewDelegate {
         }
     }
 
+    func sidebarDidSelectFile(path: String) {
+        if !isEditorSidebarVisible {
+            toggleEditorSidebar()
+        }
+        editorSidebarView.openFile(at: path)
+    }
+
     func sidebarDidRequestRenameSession(_ session: Session) {
         let alert = NSAlert()
         alert.messageText = "Rename Session"
@@ -491,4 +648,3 @@ private extension Comparable {
         return min(max(self, range.lowerBound), range.upperBound)
     }
 }
-

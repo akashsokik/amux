@@ -37,7 +37,10 @@ class CWDSegment: StatusBarSegment {
             cell.highlightsBy = .contentsCellMask
         }
 
-        let stack = NSStackView(views: [iconView, pathButton])
+        iconView.alphaValue = 0.5
+
+        let stack = HoverableSegmentStack(views: [iconView, pathButton])
+        stack.segmentIcon = iconView
         stack.orientation = .horizontal
         stack.spacing = 3
         stack.alignment = .centerY
