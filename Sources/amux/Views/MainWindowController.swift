@@ -140,6 +140,7 @@ class MainWindowController: NSWindowController {
         for button in toolbarButtons {
             button.refreshTheme()
         }
+        toolbarEditorDropdown?.refreshTheme()
     }
 
     @available(*, unavailable)

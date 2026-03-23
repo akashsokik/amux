@@ -189,14 +189,23 @@ final class GhosttyApp {
         ghostty_config_load_file(cfg, tmpPath)
     }
 
-    /// Write the current theme background to the override config file. Returns the path.
+    /// Write the current theme background (and foreground for light themes) to the override config file. Returns the path.
     private static func writeBackgroundOverrideFile() -> String {
         let bg = Theme.background
         var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
         bg.usingColorSpace(.sRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
-        let hex = String(format: "%02x%02x%02x", Int(r * 255), Int(g * 255), Int(b * 255))
+        let bgHex = String(format: "%02x%02x%02x", Int(r * 255), Int(g * 255), Int(b * 255))
 
-        let overrideConfig = "background = \(hex)\n"
+        var overrideConfig = "background = \(bgHex)\n"
+
+        if Theme.isLight {
+            let fg = Theme.primaryText
+            fg.usingColorSpace(.sRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)
+            let fgHex = String(format: "%02x%02x%02x", Int(r * 255), Int(g * 255), Int(b * 255))
+            overrideConfig += "foreground = \(fgHex)\n"
+            overrideConfig += "cursor-color = \(fgHex)\n"
+        }
+
         let tmpPath = NSTemporaryDirectory() + "amux-ghostty-overrides.conf"
         try? overrideConfig.write(toFile: tmpPath, atomically: true, encoding: .utf8)
         return tmpPath
