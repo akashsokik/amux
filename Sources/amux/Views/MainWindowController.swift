@@ -89,12 +89,15 @@ class MainWindowController: NSWindowController {
     private var editorResizeHandle: SidebarResizeHandle!
 
     private(set) var isEditorSidebarVisible = false
+    private(set) var isEditorExpanded = false
     private var editorSidebarWidth: CGFloat = 420
+    private var editorSidebarWidthBeforeExpand: CGFloat = 420
     private let minEditorSidebarWidth: CGFloat = 250
     private let maxEditorSidebarWidth: CGFloat = 500
 
     private let sessionManager: SessionManager
     private var toolbarButtons: [ToolbarIconButton] = []
+    private var toolbarEditorDropdown: EditorDropdownButton?
     private var statusPollTimer: Timer?
 
     private(set) var isSidebarVisible = true
@@ -131,6 +134,7 @@ class MainWindowController: NSWindowController {
     }
 
     @objc private func themeDidChange() {
+        window?.appearance = NSAppearance(named: ThemeManager.shared.current.isLight ? .aqua : .darkAqua)
         window?.backgroundColor = Theme.background
         window?.contentView?.layer?.backgroundColor = Theme.background.cgColor
         for button in toolbarButtons {
@@ -169,7 +173,7 @@ class MainWindowController: NSWindowController {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unifiedCompact
-        window.appearance = NSAppearance(named: .darkAqua)
+        window.appearance = NSAppearance(named: ThemeManager.shared.current.isLight ? .aqua : .darkAqua)
         window.isReleasedWhenClosed = false
         window.backgroundColor = Theme.background
 
@@ -227,6 +231,7 @@ class MainWindowController: NSWindowController {
 
         editorSidebarView = EditorSidebarView(frame: .zero)
         editorSidebarView.translatesAutoresizingMaskIntoConstraints = false
+        editorSidebarView.delegate = self
         contentView.addSubview(editorSidebarView)
 
         editorResizeHandle = SidebarResizeHandle()
@@ -498,9 +503,23 @@ extension MainWindowController: NSToolbarDelegate {
         case .actions:
             let item = NSToolbarItem(itemIdentifier: .actions)
             item.isBordered = false
+
+            let editorDropdown = EditorDropdownButton()
+            editorDropdown.onOpenFile = { [weak self] bundleID in
+                guard let self,
+                      let activeSession = self.sessionManager.activeSession,
+                      let focusedID = activeSession.focusedPaneID,
+                      let pane = self.splitContainerView.pane(for: focusedID),
+                      let cwd = pane.currentDirectory else { return }
+                ExternalEditorHelper.openIn(filePath: cwd, bundleID: bundleID)
+            }
+            editorDropdown.heightAnchor.constraint(equalToConstant: 22).isActive = true
+            toolbarEditorDropdown = editorDropdown
+
             let stack = NSStackView()
             stack.orientation = .horizontal
             stack.spacing = 10
+            stack.addArrangedSubview(editorDropdown)
             stack.addArrangedSubview(makeToolbarButton(symbolName: "rectangle.split.1x2", accessibilityDescription: "Split Horizontal", action: #selector(toolbarSplitHorizontal(_:))))
             stack.addArrangedSubview(makeToolbarButton(symbolName: "rectangle.split.2x1", accessibilityDescription: "Split Vertical", action: #selector(toolbarSplitVertical(_:))))
             stack.addArrangedSubview(makeToolbarButton(symbolName: "plus", accessibilityDescription: "New Session", action: #selector(toolbarNewSession(_:))))
@@ -618,6 +637,38 @@ extension MainWindowController: SidebarViewDelegate {
                 session.name = newName
                 self?.sidebarView.reloadSessions()
             }
+        }
+    }
+}
+
+// MARK: - EditorSidebarViewDelegate
+
+extension MainWindowController: EditorSidebarViewDelegate {
+    func editorSidebarDidToggle(visible: Bool) {}
+
+    func editorSidebarDidRequestToggleExpand() {
+        guard let contentView = window?.contentView else { return }
+        isEditorExpanded.toggle()
+        editorSidebarView.setExpanded(isEditorExpanded)
+
+        let targetWidth: CGFloat
+        if isEditorExpanded {
+            editorSidebarWidthBeforeExpand = editorSidebarWidth
+            let leftEdge = isSidebarVisible ? sidebarWidth : 0
+            let available = contentView.bounds.width - leftEdge
+            // Use 60% of available space, leave room for the terminal
+            targetWidth = min(available * 0.6, available - 200)
+        } else {
+            targetWidth = editorSidebarWidthBeforeExpand
+        }
+
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = Theme.Animation.standard
+            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            context.allowsImplicitAnimation = true
+            editorSidebarWidthConstraint.animator().constant = targetWidth
+            editorSidebarWidth = targetWidth
+            contentView.layoutSubtreeIfNeeded()
         }
     }
 }

@@ -4,6 +4,7 @@ import AppKit
 
 protocol EditorSidebarViewDelegate: AnyObject {
     func editorSidebarDidToggle(visible: Bool)
+    func editorSidebarDidRequestToggleExpand()
 }
 
 // MARK: - EditorSidebarView
@@ -89,6 +90,9 @@ class EditorSidebarView: NSView {
         }
         headerView.onClose = { [weak self] in
             self?.closeActiveTab()
+        }
+        headerView.onToggleExpand = { [weak self] in
+            self?.delegate?.editorSidebarDidRequestToggleExpand()
         }
         addSubview(headerView)
 
@@ -176,6 +180,10 @@ class EditorSidebarView: NSView {
     }
 
     // MARK: - Public API
+
+    func setExpanded(_ expanded: Bool) {
+        headerView.setExpanded(expanded)
+    }
 
     func openFile(at path: String) {
         if let existingTab = tabs.first(where: { $0.filePath == path }) {
@@ -312,7 +320,6 @@ class EditorSidebarView: NSView {
         refreshChrome()
 
         guard let tab = activeTab else {
-            headerView.isHidden = true
             placeholderLabel.isHidden = false
             unsupportedLabel.isHidden = true
             editorContentView.isHidden = true
@@ -320,7 +327,6 @@ class EditorSidebarView: NSView {
         }
 
         placeholderLabel.isHidden = true
-        headerView.isHidden = false
 
         if tab.isEditable {
             unsupportedLabel.isHidden = true
@@ -537,15 +543,18 @@ extension EditorTabStripView: EditorTabItemViewDelegate {
 
 class EditorHeaderView: NSView {
     private var pathLabel: NSTextField!
+    private var expandButton: DimIconButton!
     private var saveButton: DimIconButton!
     private var editorDropdown: EditorDropdownButton!
     private var closeButton: DimIconButton!
     private var bottomBorder: NSView!
 
     private var currentFilePath: String?
+    private(set) var isExpanded = false
 
     var onSave: (() -> Void)?
     var onClose: (() -> Void)?
+    var onToggleExpand: (() -> Void)?
 
     override init(frame: NSRect) {
         super.init(frame: frame)
@@ -571,6 +580,23 @@ class EditorHeaderView: NSView {
         pathLabel.lineBreakMode = .byTruncatingHead
         pathLabel.maximumNumberOfLines = 1
         addSubview(pathLabel)
+
+        expandButton = DimIconButton()
+        expandButton.translatesAutoresizingMaskIntoConstraints = false
+        expandButton.image = NSImage(
+            systemSymbolName: "arrow.left.and.line.vertical.and.arrow.right",
+            accessibilityDescription: "Expand Editor"
+        )?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+        )
+        expandButton.imagePosition = .imageOnly
+        expandButton.bezelStyle = .accessoryBarAction
+        expandButton.isBordered = false
+        expandButton.target = self
+        expandButton.action = #selector(expandClicked)
+        expandButton.toolTip = "Expand Editor"
+        expandButton.refreshDimState()
+        addSubview(expandButton)
 
         saveButton = DimIconButton()
         saveButton.translatesAutoresizingMaskIntoConstraints = false
@@ -618,33 +644,34 @@ class EditorHeaderView: NSView {
         bottomBorder.wantsLayer = true
         addSubview(bottomBorder)
 
+        // Icon cluster: group all action buttons tightly
+        let iconCluster = NSStackView(views: [expandButton, saveButton, editorDropdown, closeButton])
+        iconCluster.translatesAutoresizingMaskIntoConstraints = false
+        iconCluster.orientation = .horizontal
+        iconCluster.spacing = 2
+        iconCluster.alignment = .centerY
+        addSubview(iconCluster)
+
+        let iconSize: CGFloat = 20
+
         NSLayoutConstraint.activate([
             pathLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             pathLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
             pathLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: saveButton.leadingAnchor,
+                lessThanOrEqualTo: iconCluster.leadingAnchor,
                 constant: -8
             ),
 
-            closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            closeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            closeButton.widthAnchor.constraint(equalToConstant: 18),
-            closeButton.heightAnchor.constraint(equalToConstant: 18),
+            iconCluster.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            iconCluster.centerYAnchor.constraint(equalTo: centerYAnchor),
 
-            editorDropdown.trailingAnchor.constraint(
-                equalTo: closeButton.leadingAnchor,
-                constant: -6
-            ),
-            editorDropdown.centerYAnchor.constraint(equalTo: centerYAnchor),
-            editorDropdown.heightAnchor.constraint(equalToConstant: 22),
-
-            saveButton.trailingAnchor.constraint(
-                equalTo: editorDropdown.leadingAnchor,
-                constant: -6
-            ),
-            saveButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            saveButton.widthAnchor.constraint(equalToConstant: 18),
-            saveButton.heightAnchor.constraint(equalToConstant: 18),
+            expandButton.widthAnchor.constraint(equalToConstant: iconSize),
+            expandButton.heightAnchor.constraint(equalToConstant: iconSize),
+            saveButton.widthAnchor.constraint(equalToConstant: iconSize),
+            saveButton.heightAnchor.constraint(equalToConstant: iconSize),
+            editorDropdown.heightAnchor.constraint(equalToConstant: iconSize),
+            closeButton.widthAnchor.constraint(equalToConstant: iconSize),
+            closeButton.heightAnchor.constraint(equalToConstant: iconSize),
 
             bottomBorder.leadingAnchor.constraint(equalTo: leadingAnchor),
             bottomBorder.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -667,8 +694,11 @@ class EditorHeaderView: NSView {
 
         pathLabel.stringValue = isDirty ? "\(display) *" : display
         pathLabel.toolTip = filePath
+        saveButton.isHidden = false
         saveButton.isEnabled = canSave
+        editorDropdown.isHidden = false
         editorDropdown.isEnabled = true
+        closeButton.isHidden = false
         closeButton.isEnabled = canClose
     }
 
@@ -676,18 +706,37 @@ class EditorHeaderView: NSView {
         currentFilePath = nil
         pathLabel.stringValue = ""
         pathLabel.toolTip = nil
-        saveButton.isEnabled = false
-        editorDropdown.isEnabled = false
-        closeButton.isEnabled = false
+        saveButton.isHidden = true
+        editorDropdown.isHidden = true
+        closeButton.isHidden = true
     }
 
     func refreshTheme() {
         layer?.backgroundColor = Theme.sidebarBg.cgColor
         bottomBorder.layer?.backgroundColor = Theme.outlineVariant.cgColor
         pathLabel.textColor = Theme.tertiaryText
+        expandButton.refreshDimState()
         saveButton.refreshDimState()
         editorDropdown.refreshTheme()
         closeButton.refreshDimState()
+    }
+
+    @objc private func expandClicked() {
+        onToggleExpand?()
+    }
+
+    func setExpanded(_ expanded: Bool) {
+        isExpanded = expanded
+        let symbolName = expanded
+            ? "arrow.right.and.line.vertical.and.arrow.left"
+            : "arrow.left.and.line.vertical.and.arrow.right"
+        expandButton.image = NSImage(
+            systemSymbolName: symbolName,
+            accessibilityDescription: expanded ? "Collapse Editor" : "Expand Editor"
+        )?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+        )
+        expandButton.toolTip = expanded ? "Collapse Editor" : "Expand Editor"
     }
 
     @objc private func saveClicked() {

@@ -3,6 +3,7 @@ import AppKit
 struct ThemeDefinition {
     let id: String
     let name: String
+    let isLight: Bool
 
     // Surfaces
     let surface: NSColor
@@ -44,6 +45,7 @@ extension ThemeDefinition {
     static let kineticMonolith = ThemeDefinition(
         id: "kinetic-monolith",
         name: "Kinetic Monolith",
+        isLight: false,
         surface: NSColor(srgbRed: 0.055, green: 0.055, blue: 0.055, alpha: 1.0),
         surfaceContainerLowest: NSColor(srgbRed: 0.0, green: 0.0, blue: 0.0, alpha: 1.0),
         surfaceContainerLow: NSColor(srgbRed: 0.075, green: 0.075, blue: 0.075, alpha: 1.0),
@@ -70,6 +72,7 @@ extension ThemeDefinition {
     static let obsidian = ThemeDefinition(
         id: "obsidian",
         name: "Obsidian",
+        isLight: false,
         surface: NSColor(srgbRed: 0.102, green: 0.102, blue: 0.102, alpha: 1.0),        // #1a1a1a
         surfaceContainerLowest: NSColor(srgbRed: 0.051, green: 0.051, blue: 0.051, alpha: 1.0), // #0d0d0d
         surfaceContainerLow: NSColor(srgbRed: 0.125, green: 0.125, blue: 0.125, alpha: 1.0),    // #202020
@@ -96,6 +99,7 @@ extension ThemeDefinition {
     static let phosphor = ThemeDefinition(
         id: "phosphor",
         name: "Phosphor",
+        isLight: false,
         surface: NSColor(srgbRed: 0.039, green: 0.071, blue: 0.039, alpha: 1.0),               // #0a120a
         surfaceContainerLowest: NSColor(srgbRed: 0.020, green: 0.039, blue: 0.020, alpha: 1.0), // #050a05
         surfaceContainerLow: NSColor(srgbRed: 0.059, green: 0.098, blue: 0.059, alpha: 1.0),    // #0f190f
@@ -123,6 +127,7 @@ extension ThemeDefinition {
     static let nightOwl = ThemeDefinition(
         id: "night-owl",
         name: "Night Owl",
+        isLight: false,
         surface: NSColor(srgbRed: 0.012, green: 0.043, blue: 0.082, alpha: 1.0),               // #010b15
         surfaceContainerLowest: NSColor(srgbRed: 0.004, green: 0.024, blue: 0.055, alpha: 1.0), // #01060e
         surfaceContainerLow: NSColor(srgbRed: 0.027, green: 0.067, blue: 0.118, alpha: 1.0),    // #07111e
@@ -150,6 +155,7 @@ extension ThemeDefinition {
     static let rosePine = ThemeDefinition(
         id: "rose-pine",
         name: "Rose Pine",
+        isLight: false,
         surface: NSColor(srgbRed: 0.137, green: 0.118, blue: 0.169, alpha: 1.0),               // #231e2b
         surfaceContainerLowest: NSColor(srgbRed: 0.098, green: 0.082, blue: 0.129, alpha: 1.0), // #191521
         surfaceContainerLow: NSColor(srgbRed: 0.165, green: 0.145, blue: 0.200, alpha: 1.0),    // #2a2533
@@ -177,6 +183,7 @@ extension ThemeDefinition {
     static let bloodMoon = ThemeDefinition(
         id: "blood-moon",
         name: "Blood Moon",
+        isLight: false,
         surface: NSColor(srgbRed: 0.094, green: 0.059, blue: 0.055, alpha: 1.0),               // #180f0e
         surfaceContainerLowest: NSColor(srgbRed: 0.059, green: 0.035, blue: 0.031, alpha: 1.0), // #0f0908
         surfaceContainerLow: NSColor(srgbRed: 0.122, green: 0.082, blue: 0.075, alpha: 1.0),    // #1f1513
@@ -204,6 +211,7 @@ extension ThemeDefinition {
     static let voidPink = ThemeDefinition(
         id: "void-pink",
         name: "Void Pink",
+        isLight: false,
         surface: NSColor(srgbRed: 0.035, green: 0.035, blue: 0.035, alpha: 1.0),               // #090909
         surfaceContainerLowest: NSColor(srgbRed: 0.0, green: 0.0, blue: 0.0, alpha: 1.0),       // #000000
         surfaceContainerLow: NSColor(srgbRed: 0.063, green: 0.059, blue: 0.067, alpha: 1.0),    // #100f11
@@ -231,6 +239,7 @@ extension ThemeDefinition {
     static let glacier = ThemeDefinition(
         id: "glacier",
         name: "Glacier",
+        isLight: false,
         surface: NSColor(srgbRed: 0.082, green: 0.098, blue: 0.114, alpha: 1.0),               // #15191d
         surfaceContainerLowest: NSColor(srgbRed: 0.047, green: 0.059, blue: 0.071, alpha: 1.0), // #0c0f12
         surfaceContainerLow: NSColor(srgbRed: 0.110, green: 0.129, blue: 0.149, alpha: 1.0),    // #1c2126
@@ -258,6 +267,7 @@ extension ThemeDefinition {
     static let solarFlare = ThemeDefinition(
         id: "solar-flare",
         name: "Solar Flare",
+        isLight: false,
         surface: NSColor(srgbRed: 0.090, green: 0.078, blue: 0.067, alpha: 1.0),               // #171411
         surfaceContainerLowest: NSColor(srgbRed: 0.055, green: 0.047, blue: 0.039, alpha: 1.0), // #0e0c0a
         surfaceContainerLow: NSColor(srgbRed: 0.118, green: 0.106, blue: 0.090, alpha: 1.0),    // #1e1b17
@@ -281,6 +291,260 @@ extension ThemeDefinition {
         cornerRadiusCard: 0
     )
 
+    // MARK: - Light Themes
+
+    // Light counterpart of Kinetic Monolith -- cool grey, cyan accent
+    static let kineticMonolithLight = ThemeDefinition(
+        id: "kinetic-monolith-light",
+        name: "Kinetic Monolith Light",
+        isLight: true,
+        surface: NSColor(srgbRed: 0.965, green: 0.965, blue: 0.965, alpha: 1.0),
+        surfaceContainerLowest: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+        surfaceContainerLow: NSColor(srgbRed: 0.945, green: 0.945, blue: 0.945, alpha: 1.0),
+        surfaceContainerHigh: NSColor(srgbRed: 0.910, green: 0.910, blue: 0.910, alpha: 1.0),
+        surfaceContainerHighest: NSColor(srgbRed: 0.878, green: 0.878, blue: 0.878, alpha: 1.0),
+        surfaceBright: NSColor(srgbRed: 0.855, green: 0.855, blue: 0.855, alpha: 1.0),
+        primary: NSColor(srgbRed: 0.0, green: 0.600, blue: 0.650, alpha: 1.0),
+        primaryContainer: NSColor(srgbRed: 0.0, green: 0.700, blue: 0.750, alpha: 1.0),
+        secondary: NSColor(srgbRed: 0.0, green: 0.533, blue: 0.612, alpha: 1.0),
+        onPrimary: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+        onSurface: NSColor(srgbRed: 0.133, green: 0.133, blue: 0.133, alpha: 1.0),
+        onSurfaceVariant: NSColor(srgbRed: 0.333, green: 0.333, blue: 0.333, alpha: 1.0),
+        tertiaryText: NSColor(srgbRed: 0.533, green: 0.533, blue: 0.533, alpha: 1.0),
+        quaternaryText: NSColor(srgbRed: 0.667, green: 0.667, blue: 0.667, alpha: 1.0),
+        outline: NSColor(srgbRed: 0.780, green: 0.780, blue: 0.780, alpha: 1.0),
+        outlineVariant: NSColor(srgbRed: 0.780, green: 0.780, blue: 0.780, alpha: 0.25),
+        hoverBg: NSColor(white: 0.0, alpha: 0.04),
+        activeBg: NSColor(white: 0.0, alpha: 0.10),
+        cornerRadiusBadge: 0,
+        cornerRadiusElement: 0,
+        cornerRadiusCard: 0
+    )
+
+    // Light counterpart of Obsidian -- warm cream, orange accent
+    static let obsidianLight = ThemeDefinition(
+        id: "obsidian-light",
+        name: "Obsidian Light",
+        isLight: true,
+        surface: NSColor(srgbRed: 0.965, green: 0.957, blue: 0.945, alpha: 1.0),
+        surfaceContainerLowest: NSColor(srgbRed: 1.0, green: 0.996, blue: 0.988, alpha: 1.0),
+        surfaceContainerLow: NSColor(srgbRed: 0.945, green: 0.933, blue: 0.918, alpha: 1.0),
+        surfaceContainerHigh: NSColor(srgbRed: 0.910, green: 0.898, blue: 0.878, alpha: 1.0),
+        surfaceContainerHighest: NSColor(srgbRed: 0.878, green: 0.863, blue: 0.843, alpha: 1.0),
+        surfaceBright: NSColor(srgbRed: 0.855, green: 0.839, blue: 0.816, alpha: 1.0),
+        primary: NSColor(srgbRed: 0.780, green: 0.490, blue: 0.090, alpha: 1.0),
+        primaryContainer: NSColor(srgbRed: 0.820, green: 0.530, blue: 0.120, alpha: 1.0),
+        secondary: NSColor(srgbRed: 0.690, green: 0.420, blue: 0.050, alpha: 1.0),
+        onPrimary: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+        onSurface: NSColor(srgbRed: 0.145, green: 0.133, blue: 0.118, alpha: 1.0),
+        onSurfaceVariant: NSColor(srgbRed: 0.345, green: 0.325, blue: 0.302, alpha: 1.0),
+        tertiaryText: NSColor(srgbRed: 0.545, green: 0.525, blue: 0.502, alpha: 1.0),
+        quaternaryText: NSColor(srgbRed: 0.667, green: 0.651, blue: 0.631, alpha: 1.0),
+        outline: NSColor(srgbRed: 0.780, green: 0.765, blue: 0.745, alpha: 1.0),
+        outlineVariant: NSColor(srgbRed: 0.780, green: 0.765, blue: 0.745, alpha: 0.25),
+        hoverBg: NSColor(white: 0.0, alpha: 0.04),
+        activeBg: NSColor(white: 0.0, alpha: 0.10),
+        cornerRadiusBadge: 0,
+        cornerRadiusElement: 0,
+        cornerRadiusCard: 0
+    )
+
+    // Light counterpart of Phosphor -- pale green, dark green accent
+    static let phosphorLight = ThemeDefinition(
+        id: "phosphor-light",
+        name: "Phosphor Light",
+        isLight: true,
+        surface: NSColor(srgbRed: 0.949, green: 0.969, blue: 0.949, alpha: 1.0),
+        surfaceContainerLowest: NSColor(srgbRed: 0.984, green: 1.0, blue: 0.984, alpha: 1.0),
+        surfaceContainerLow: NSColor(srgbRed: 0.925, green: 0.949, blue: 0.925, alpha: 1.0),
+        surfaceContainerHigh: NSColor(srgbRed: 0.890, green: 0.918, blue: 0.890, alpha: 1.0),
+        surfaceContainerHighest: NSColor(srgbRed: 0.859, green: 0.886, blue: 0.859, alpha: 1.0),
+        surfaceBright: NSColor(srgbRed: 0.835, green: 0.863, blue: 0.835, alpha: 1.0),
+        primary: NSColor(srgbRed: 0.098, green: 0.545, blue: 0.027, alpha: 1.0),
+        primaryContainer: NSColor(srgbRed: 0.137, green: 0.627, blue: 0.047, alpha: 1.0),
+        secondary: NSColor(srgbRed: 0.071, green: 0.447, blue: 0.012, alpha: 1.0),
+        onPrimary: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+        onSurface: NSColor(srgbRed: 0.098, green: 0.133, blue: 0.098, alpha: 1.0),
+        onSurfaceVariant: NSColor(srgbRed: 0.275, green: 0.345, blue: 0.275, alpha: 1.0),
+        tertiaryText: NSColor(srgbRed: 0.467, green: 0.533, blue: 0.467, alpha: 1.0),
+        quaternaryText: NSColor(srgbRed: 0.612, green: 0.667, blue: 0.612, alpha: 1.0),
+        outline: NSColor(srgbRed: 0.741, green: 0.784, blue: 0.741, alpha: 1.0),
+        outlineVariant: NSColor(srgbRed: 0.741, green: 0.784, blue: 0.741, alpha: 0.25),
+        hoverBg: NSColor(white: 0.0, alpha: 0.04),
+        activeBg: NSColor(white: 0.0, alpha: 0.10),
+        cornerRadiusBadge: 0,
+        cornerRadiusElement: 0,
+        cornerRadiusCard: 0
+    )
+
+    // Light counterpart of Night Owl -- pale blue, deep violet accent
+    static let nightOwlLight = ThemeDefinition(
+        id: "night-owl-light",
+        name: "Night Owl Light",
+        isLight: true,
+        surface: NSColor(srgbRed: 0.953, green: 0.961, blue: 0.976, alpha: 1.0),
+        surfaceContainerLowest: NSColor(srgbRed: 0.988, green: 0.992, blue: 1.0, alpha: 1.0),
+        surfaceContainerLow: NSColor(srgbRed: 0.929, green: 0.941, blue: 0.961, alpha: 1.0),
+        surfaceContainerHigh: NSColor(srgbRed: 0.894, green: 0.910, blue: 0.937, alpha: 1.0),
+        surfaceContainerHighest: NSColor(srgbRed: 0.863, green: 0.882, blue: 0.914, alpha: 1.0),
+        surfaceBright: NSColor(srgbRed: 0.839, green: 0.859, blue: 0.894, alpha: 1.0),
+        primary: NSColor(srgbRed: 0.478, green: 0.263, blue: 0.780, alpha: 1.0),
+        primaryContainer: NSColor(srgbRed: 0.541, green: 0.310, blue: 0.843, alpha: 1.0),
+        secondary: NSColor(srgbRed: 0.180, green: 0.467, blue: 0.690, alpha: 1.0),
+        onPrimary: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+        onSurface: NSColor(srgbRed: 0.118, green: 0.133, blue: 0.165, alpha: 1.0),
+        onSurfaceVariant: NSColor(srgbRed: 0.306, green: 0.333, blue: 0.388, alpha: 1.0),
+        tertiaryText: NSColor(srgbRed: 0.502, green: 0.529, blue: 0.580, alpha: 1.0),
+        quaternaryText: NSColor(srgbRed: 0.643, green: 0.663, blue: 0.706, alpha: 1.0),
+        outline: NSColor(srgbRed: 0.769, green: 0.784, blue: 0.816, alpha: 1.0),
+        outlineVariant: NSColor(srgbRed: 0.769, green: 0.784, blue: 0.816, alpha: 0.25),
+        hoverBg: NSColor(white: 0.0, alpha: 0.04),
+        activeBg: NSColor(white: 0.0, alpha: 0.10),
+        cornerRadiusBadge: 0,
+        cornerRadiusElement: 0,
+        cornerRadiusCard: 0
+    )
+
+    // Light counterpart of Rose Pine -- lavender tint, rose accent
+    static let rosePineLight = ThemeDefinition(
+        id: "rose-pine-light",
+        name: "Rose Pine Light",
+        isLight: true,
+        surface: NSColor(srgbRed: 0.965, green: 0.957, blue: 0.976, alpha: 1.0),
+        surfaceContainerLowest: NSColor(srgbRed: 0.992, green: 0.988, blue: 1.0, alpha: 1.0),
+        surfaceContainerLow: NSColor(srgbRed: 0.941, green: 0.933, blue: 0.957, alpha: 1.0),
+        surfaceContainerHigh: NSColor(srgbRed: 0.910, green: 0.898, blue: 0.929, alpha: 1.0),
+        surfaceContainerHighest: NSColor(srgbRed: 0.878, green: 0.867, blue: 0.898, alpha: 1.0),
+        surfaceBright: NSColor(srgbRed: 0.855, green: 0.843, blue: 0.875, alpha: 1.0),
+        primary: NSColor(srgbRed: 0.749, green: 0.329, blue: 0.463, alpha: 1.0),
+        primaryContainer: NSColor(srgbRed: 0.816, green: 0.400, blue: 0.533, alpha: 1.0),
+        secondary: NSColor(srgbRed: 0.533, green: 0.353, blue: 0.702, alpha: 1.0),
+        onPrimary: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+        onSurface: NSColor(srgbRed: 0.157, green: 0.141, blue: 0.184, alpha: 1.0),
+        onSurfaceVariant: NSColor(srgbRed: 0.345, green: 0.322, blue: 0.388, alpha: 1.0),
+        tertiaryText: NSColor(srgbRed: 0.533, green: 0.514, blue: 0.580, alpha: 1.0),
+        quaternaryText: NSColor(srgbRed: 0.663, green: 0.647, blue: 0.706, alpha: 1.0),
+        outline: NSColor(srgbRed: 0.780, green: 0.769, blue: 0.812, alpha: 1.0),
+        outlineVariant: NSColor(srgbRed: 0.780, green: 0.769, blue: 0.812, alpha: 0.25),
+        hoverBg: NSColor(white: 0.0, alpha: 0.04),
+        activeBg: NSColor(white: 0.0, alpha: 0.10),
+        cornerRadiusBadge: 0,
+        cornerRadiusElement: 0,
+        cornerRadiusCard: 0
+    )
+
+    // Light counterpart of Blood Moon -- warm cream, deep red accent
+    static let bloodMoonLight = ThemeDefinition(
+        id: "blood-moon-light",
+        name: "Blood Moon Light",
+        isLight: true,
+        surface: NSColor(srgbRed: 0.976, green: 0.957, blue: 0.953, alpha: 1.0),
+        surfaceContainerLowest: NSColor(srgbRed: 1.0, green: 0.992, blue: 0.988, alpha: 1.0),
+        surfaceContainerLow: NSColor(srgbRed: 0.953, green: 0.933, blue: 0.929, alpha: 1.0),
+        surfaceContainerHigh: NSColor(srgbRed: 0.922, green: 0.898, blue: 0.894, alpha: 1.0),
+        surfaceContainerHighest: NSColor(srgbRed: 0.890, green: 0.867, blue: 0.863, alpha: 1.0),
+        surfaceBright: NSColor(srgbRed: 0.867, green: 0.843, blue: 0.839, alpha: 1.0),
+        primary: NSColor(srgbRed: 0.780, green: 0.180, blue: 0.137, alpha: 1.0),
+        primaryContainer: NSColor(srgbRed: 0.847, green: 0.220, blue: 0.173, alpha: 1.0),
+        secondary: NSColor(srgbRed: 0.820, green: 0.380, blue: 0.247, alpha: 1.0),
+        onPrimary: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+        onSurface: NSColor(srgbRed: 0.157, green: 0.118, blue: 0.110, alpha: 1.0),
+        onSurfaceVariant: NSColor(srgbRed: 0.353, green: 0.306, blue: 0.298, alpha: 1.0),
+        tertiaryText: NSColor(srgbRed: 0.545, green: 0.502, blue: 0.494, alpha: 1.0),
+        quaternaryText: NSColor(srgbRed: 0.671, green: 0.639, blue: 0.631, alpha: 1.0),
+        outline: NSColor(srgbRed: 0.784, green: 0.757, blue: 0.749, alpha: 1.0),
+        outlineVariant: NSColor(srgbRed: 0.784, green: 0.757, blue: 0.749, alpha: 0.25),
+        hoverBg: NSColor(white: 0.0, alpha: 0.04),
+        activeBg: NSColor(white: 0.0, alpha: 0.10),
+        cornerRadiusBadge: 0,
+        cornerRadiusElement: 0,
+        cornerRadiusCard: 0
+    )
+
+    // Light counterpart of Void Pink -- near white, hot pink accent
+    static let voidPinkLight = ThemeDefinition(
+        id: "void-pink-light",
+        name: "Void Pink Light",
+        isLight: true,
+        surface: NSColor(srgbRed: 0.973, green: 0.965, blue: 0.976, alpha: 1.0),
+        surfaceContainerLowest: NSColor(srgbRed: 1.0, green: 0.996, blue: 1.0, alpha: 1.0),
+        surfaceContainerLow: NSColor(srgbRed: 0.949, green: 0.941, blue: 0.953, alpha: 1.0),
+        surfaceContainerHigh: NSColor(srgbRed: 0.918, green: 0.910, blue: 0.922, alpha: 1.0),
+        surfaceContainerHighest: NSColor(srgbRed: 0.886, green: 0.878, blue: 0.890, alpha: 1.0),
+        surfaceBright: NSColor(srgbRed: 0.863, green: 0.855, blue: 0.867, alpha: 1.0),
+        primary: NSColor(srgbRed: 0.843, green: 0.137, blue: 0.412, alpha: 1.0),
+        primaryContainer: NSColor(srgbRed: 0.878, green: 0.157, blue: 0.459, alpha: 1.0),
+        secondary: NSColor(srgbRed: 0.780, green: 0.278, blue: 0.482, alpha: 1.0),
+        onPrimary: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+        onSurface: NSColor(srgbRed: 0.145, green: 0.133, blue: 0.153, alpha: 1.0),
+        onSurfaceVariant: NSColor(srgbRed: 0.337, green: 0.322, blue: 0.349, alpha: 1.0),
+        tertiaryText: NSColor(srgbRed: 0.533, green: 0.518, blue: 0.545, alpha: 1.0),
+        quaternaryText: NSColor(srgbRed: 0.663, green: 0.651, blue: 0.671, alpha: 1.0),
+        outline: NSColor(srgbRed: 0.784, green: 0.773, blue: 0.790, alpha: 1.0),
+        outlineVariant: NSColor(srgbRed: 0.784, green: 0.773, blue: 0.790, alpha: 0.25),
+        hoverBg: NSColor(white: 0.0, alpha: 0.04),
+        activeBg: NSColor(white: 0.0, alpha: 0.10),
+        cornerRadiusBadge: 0,
+        cornerRadiusElement: 0,
+        cornerRadiusCard: 0
+    )
+
+    // Light counterpart of Glacier -- pale blue-grey, deeper ice blue accent
+    static let glacierLight = ThemeDefinition(
+        id: "glacier-light",
+        name: "Glacier Light",
+        isLight: true,
+        surface: NSColor(srgbRed: 0.953, green: 0.961, blue: 0.969, alpha: 1.0),
+        surfaceContainerLowest: NSColor(srgbRed: 0.988, green: 0.992, blue: 0.996, alpha: 1.0),
+        surfaceContainerLow: NSColor(srgbRed: 0.929, green: 0.941, blue: 0.949, alpha: 1.0),
+        surfaceContainerHigh: NSColor(srgbRed: 0.898, green: 0.910, blue: 0.922, alpha: 1.0),
+        surfaceContainerHighest: NSColor(srgbRed: 0.867, green: 0.882, blue: 0.894, alpha: 1.0),
+        surfaceBright: NSColor(srgbRed: 0.843, green: 0.859, blue: 0.871, alpha: 1.0),
+        primary: NSColor(srgbRed: 0.200, green: 0.557, blue: 0.737, alpha: 1.0),
+        primaryContainer: NSColor(srgbRed: 0.247, green: 0.620, blue: 0.808, alpha: 1.0),
+        secondary: NSColor(srgbRed: 0.380, green: 0.667, blue: 0.843, alpha: 1.0),
+        onPrimary: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+        onSurface: NSColor(srgbRed: 0.118, green: 0.141, blue: 0.161, alpha: 1.0),
+        onSurfaceVariant: NSColor(srgbRed: 0.302, green: 0.337, blue: 0.369, alpha: 1.0),
+        tertiaryText: NSColor(srgbRed: 0.498, green: 0.533, blue: 0.565, alpha: 1.0),
+        quaternaryText: NSColor(srgbRed: 0.639, green: 0.663, blue: 0.690, alpha: 1.0),
+        outline: NSColor(srgbRed: 0.761, green: 0.780, blue: 0.800, alpha: 1.0),
+        outlineVariant: NSColor(srgbRed: 0.761, green: 0.780, blue: 0.800, alpha: 0.25),
+        hoverBg: NSColor(white: 0.0, alpha: 0.04),
+        activeBg: NSColor(white: 0.0, alpha: 0.10),
+        cornerRadiusBadge: 0,
+        cornerRadiusElement: 0,
+        cornerRadiusCard: 0
+    )
+
+    // Light counterpart of Solar Flare -- warm white, deep amber accent
+    static let solarFlareLight = ThemeDefinition(
+        id: "solar-flare-light",
+        name: "Solar Flare Light",
+        isLight: true,
+        surface: NSColor(srgbRed: 0.973, green: 0.965, blue: 0.953, alpha: 1.0),
+        surfaceContainerLowest: NSColor(srgbRed: 1.0, green: 0.996, blue: 0.988, alpha: 1.0),
+        surfaceContainerLow: NSColor(srgbRed: 0.949, green: 0.941, blue: 0.925, alpha: 1.0),
+        surfaceContainerHigh: NSColor(srgbRed: 0.918, green: 0.906, blue: 0.890, alpha: 1.0),
+        surfaceContainerHighest: NSColor(srgbRed: 0.886, green: 0.875, blue: 0.855, alpha: 1.0),
+        surfaceBright: NSColor(srgbRed: 0.863, green: 0.851, blue: 0.831, alpha: 1.0),
+        primary: NSColor(srgbRed: 0.745, green: 0.557, blue: 0.039, alpha: 1.0),
+        primaryContainer: NSColor(srgbRed: 0.808, green: 0.612, blue: 0.059, alpha: 1.0),
+        secondary: NSColor(srgbRed: 0.667, green: 0.490, blue: 0.012, alpha: 1.0),
+        onPrimary: NSColor(srgbRed: 1.0, green: 1.0, blue: 1.0, alpha: 1.0),
+        onSurface: NSColor(srgbRed: 0.153, green: 0.141, blue: 0.118, alpha: 1.0),
+        onSurfaceVariant: NSColor(srgbRed: 0.345, green: 0.329, blue: 0.302, alpha: 1.0),
+        tertiaryText: NSColor(srgbRed: 0.541, green: 0.525, blue: 0.498, alpha: 1.0),
+        quaternaryText: NSColor(srgbRed: 0.667, green: 0.655, blue: 0.631, alpha: 1.0),
+        outline: NSColor(srgbRed: 0.780, green: 0.769, blue: 0.749, alpha: 1.0),
+        outlineVariant: NSColor(srgbRed: 0.780, green: 0.769, blue: 0.749, alpha: 0.25),
+        hoverBg: NSColor(white: 0.0, alpha: 0.04),
+        activeBg: NSColor(white: 0.0, alpha: 0.10),
+        cornerRadiusBadge: 0,
+        cornerRadiusElement: 0,
+        cornerRadiusCard: 0
+    )
+
     static let allBuiltIn: [ThemeDefinition] = [
         .kineticMonolith,
         .obsidian,
@@ -291,5 +555,14 @@ extension ThemeDefinition {
         .voidPink,
         .glacier,
         .solarFlare,
+        .kineticMonolithLight,
+        .obsidianLight,
+        .phosphorLight,
+        .nightOwlLight,
+        .rosePineLight,
+        .bloodMoonLight,
+        .voidPinkLight,
+        .glacierLight,
+        .solarFlareLight,
     ]
 }

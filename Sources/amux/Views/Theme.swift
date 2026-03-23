@@ -9,6 +9,7 @@ enum Theme {
     // MARK: - Current theme forwarding
 
     private static var current: ThemeDefinition { ThemeManager.shared.current }
+    static var isLight: Bool { current.isLight }
 
     // MARK: - Surface hierarchy
 
@@ -53,7 +54,7 @@ enum Theme {
     static var quaternaryText: NSColor { current.quaternaryText }
     static var borderPrimary: NSColor { outlineVariant }
     static var borderSecondary: NSColor { current.outline.withAlphaComponent(0.25) }
-    static var borderTranslucent: NSColor { NSColor(white: 1.0, alpha: 0.06) }
+    static var borderTranslucent: NSColor { NSColor(white: current.isLight ? 0.0 : 1.0, alpha: 0.06) }
     static var accent: NSColor { primary }
     static var accentUI: NSColor { primary }
 
@@ -148,7 +149,7 @@ class ThinScroller: NSScroller {
         guard !knobRect.isEmpty else { return }
         let inset = knobRect.insetBy(dx: 1, dy: 1)
         let path = NSBezierPath(roundedRect: inset, xRadius: 2, yRadius: 2)
-        NSColor(white: 1.0, alpha: 0.15).setFill()
+        NSColor(white: ThemeManager.shared.current.isLight ? 0.0 : 1.0, alpha: 0.15).setFill()
         path.fill()
     }
 
