@@ -31,6 +31,8 @@ class AgentListView: NSView {
     private var scrollView: NSScrollView!
     private var emptyLabel: NSTextField!
     private var sessionGroups: [SessionGroup] = []
+    // Cached wrappers for stable NSOutlineView identity (prevents collapse on reload)
+    private var cachedSessionWrappers: [SessionGroupWrapper] = []
 
     private static let sessionGroupCellID = NSUserInterfaceItemIdentifier("SessionGroupCell")
     private static let typeGroupCellID = NSUserInterfaceItemIdentifier("TypeGroupCell")
@@ -156,11 +158,52 @@ class AgentListView: NSView {
             groups[agent.sessionID] = group
         }
         sessionGroups = Array(groups.values).sorted { $0.sessionName < $1.sessionName }
+
+        // Build stable wrappers -- reuse existing ones by session ID to preserve
+        // NSOutlineView expand/collapse state (it uses object identity)
+        let oldWrappersBySession = Dictionary(
+            uniqueKeysWithValues: cachedSessionWrappers.map { ($0.group.sessionID, $0) }
+        )
+        var newWrappers: [SessionGroupWrapper] = []
+        for group in sessionGroups {
+            let sessionWrapper: SessionGroupWrapper
+            if let existing = oldWrappersBySession[group.sessionID] {
+                existing.group = group
+                sessionWrapper = existing
+            } else {
+                sessionWrapper = SessionGroupWrapper(group: group, typeGroupWrappers: [])
+            }
+            // Rebuild type group wrappers, reusing by type
+            let oldTypeByType = Dictionary(
+                uniqueKeysWithValues: sessionWrapper.typeGroupWrappers.map { ($0.typeGroup.type, $0) }
+            )
+            var newTypeWrappers: [TypeGroupWrapper] = []
+            for tg in group.typeGroups {
+                let typeWrapper: TypeGroupWrapper
+                if let existing = oldTypeByType[tg.type] {
+                    existing.typeGroup = tg
+                    existing.agentWrappers = tg.agents.map { AgentWrapper(agent: $0) }
+                    typeWrapper = existing
+                } else {
+                    typeWrapper = TypeGroupWrapper(
+                        typeGroup: tg,
+                        parentSessionID: group.sessionID,
+                        agentWrappers: tg.agents.map { AgentWrapper(agent: $0) }
+                    )
+                }
+                newTypeWrappers.append(typeWrapper)
+            }
+            sessionWrapper.typeGroupWrappers = newTypeWrappers
+            newWrappers.append(sessionWrapper)
+        }
+        cachedSessionWrappers = newWrappers
+
         outlineView.reloadData()
-        // Expand all groups by default
-        for i in 0..<outlineView.numberOfRows {
-            let item = outlineView.item(atRow: i)
-            outlineView.expandItem(item, expandChildren: true)
+        // Expand all new groups (existing ones retain their state via identity)
+        for wrapper in cachedSessionWrappers {
+            if !outlineView.isItemExpanded(wrapper) {
+                outlineView.expandItem(wrapper, expandChildren: true)
+            }
         }
         emptyLabel.isHidden = !sessionGroups.isEmpty
         scrollView.isHidden = sessionGroups.isEmpty
@@ -208,7 +251,7 @@ class AgentListView: NSView {
 
 // NSOutlineView needs reference-type items for identity tracking.
 private class SessionGroupWrapper {
-    let group: SessionGroup
+    var group: SessionGroup
     var typeGroupWrappers: [TypeGroupWrapper]
 
     init(group: SessionGroup, typeGroupWrappers: [TypeGroupWrapper]) {
@@ -218,7 +261,7 @@ private class SessionGroupWrapper {
 }
 
 private class TypeGroupWrapper {
-    let typeGroup: TypeGroup
+    var typeGroup: TypeGroup
     let parentSessionID: UUID
     var agentWrappers: [AgentWrapper]
 
@@ -255,15 +298,7 @@ extension AgentListView: NSOutlineViewDataSource {
 
     func outlineView(_ outlineView: NSOutlineView, child index: Int, ofItem item: Any?) -> Any {
         if item == nil {
-            let group = sessionGroups[index]
-            let typeWrappers = group.typeGroups.map { tg in
-                TypeGroupWrapper(
-                    typeGroup: tg,
-                    parentSessionID: group.sessionID,
-                    agentWrappers: tg.agents.map { AgentWrapper(agent: $0) }
-                )
-            }
-            return SessionGroupWrapper(group: group, typeGroupWrappers: typeWrappers)
+            return cachedSessionWrappers[index]
         }
         if let wrapper = item as? SessionGroupWrapper {
             return wrapper.typeGroupWrappers[index]
