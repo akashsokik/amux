@@ -41,6 +41,7 @@ class AgentInstance: Identifiable {
     let id: UUID
     let agentType: AgentType
     let paneID: UUID
+    let tabID: UUID?
     let sessionID: UUID
     let pid: pid_t
     var state: AgentState
@@ -49,10 +50,11 @@ class AgentInstance: Identifiable {
     var notificationMessage: String?
     var workingDirectory: String?
 
-    init(agentType: AgentType, paneID: UUID, sessionID: UUID, pid: pid_t) {
+    init(agentType: AgentType, paneID: UUID, tabID: UUID? = nil, sessionID: UUID, pid: pid_t) {
         self.id = UUID()
         self.agentType = agentType
         self.paneID = paneID
+        self.tabID = tabID
         self.sessionID = sessionID
         self.pid = pid
         self.state = .starting

@@ -350,29 +350,42 @@ class SplitContainerView: NSView {
     }
 
     /// Iterate all active panes and feed their shell PIDs to the agent manager.
-    /// Uses atomic replacement so closed panes are automatically cleaned up.
     func updateAgentManagerMappings() {
         guard let agentManager = agentManager,
               let sessionID = currentSessionID else { return }
-
-        var mappings: [(paneID: UUID, shellPid: pid_t, sessionID: UUID)] = []
+        var entries: [AgentManager.ShellEntry] = []
 
         for (paneID, pane) in paneViews {
-            if let pid = pane.shellProcessID {
-                mappings.append((paneID: paneID, shellPid: pid, sessionID: sessionID))
-            }
-        }
-        // Also include cached (inactive) session panes
-        for (cachedSessionID, cachedPanes) in sessionPaneCache {
-            guard cachedSessionID != currentSessionID else { continue }
-            for (paneID, pane) in cachedPanes {
+            // Feed all tab shell PIDs, not just the active one
+            let tabPIDs = pane.allShellPIDs
+            if tabPIDs.isEmpty {
+                // Fallback: use the pane's single shellProcessID
                 if let pid = pane.shellProcessID {
-                    mappings.append((paneID: paneID, shellPid: pid, sessionID: cachedSessionID))
+                    entries.append(.init(paneID: paneID, tabID: nil, sessionID: sessionID, shellPid: pid))
+                }
+            } else {
+                for (tabID, pid) in tabPIDs {
+                    entries.append(.init(paneID: paneID, tabID: tabID, sessionID: sessionID, shellPid: pid))
                 }
             }
         }
-
-        agentManager.replaceAllPaneMappings(mappings)
+        // Also update cached (inactive) session panes
+        for (cachedSessionID, cachedPanes) in sessionPaneCache {
+            guard cachedSessionID != currentSessionID else { continue }
+            for (paneID, pane) in cachedPanes {
+                let tabPIDs = pane.allShellPIDs
+                if tabPIDs.isEmpty {
+                    if let pid = pane.shellProcessID {
+                        entries.append(.init(paneID: paneID, tabID: nil, sessionID: cachedSessionID, shellPid: pid))
+                    }
+                } else {
+                    for (tabID, pid) in tabPIDs {
+                        entries.append(.init(paneID: paneID, tabID: tabID, sessionID: cachedSessionID, shellPid: pid))
+                    }
+                }
+            }
+        }
+        agentManager.shellEntries = entries
     }
 
     // MARK: - Dimension for divider drag

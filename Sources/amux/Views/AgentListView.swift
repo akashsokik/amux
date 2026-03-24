@@ -632,7 +632,10 @@ private class AgentCellView: NSView {
             subtitleLabel.stringValue = agent.notificationMessage ?? ""
             subtitleLabel.textColor = warningColor
         default:
-            subtitleLabel.stringValue = (agent.workingDirectory as NSString?)?.lastPathComponent ?? ""
+            let dir = (agent.workingDirectory as NSString?)?.lastPathComponent ?? ""
+            let paneShort = agent.paneID.uuidString.prefix(4)
+            let tabShort = agent.tabID?.uuidString.prefix(4) ?? "0"
+            subtitleLabel.stringValue = "\(dir)  [\(paneShort), \(tabShort)]"
             subtitleLabel.textColor = Theme.tertiaryText
         }
 

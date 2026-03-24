@@ -82,8 +82,16 @@ class TerminalPane: NSView {
     /// PID of the shell process for this pane's active tab (for CWD polling).
     private var shellPid: pid_t?
 
+    /// Shell PIDs for all tabs in this pane (tabID -> pid).
+    private var shellPidsByTab: [UUID: pid_t] = [:]
+
     /// Public read-only access to the shell PID (used for status polling).
     var shellProcessID: pid_t? { shellPid }
+
+    /// All shell PIDs across all tabs (for agent detection).
+    var allShellPIDs: [(tabID: UUID, pid: pid_t)] {
+        shellPidsByTab.map { (tabID: $0.key, pid: $0.value) }
+    }
 
     // MARK: - Terminal view accessors
 
@@ -496,6 +504,9 @@ class TerminalPane: NSView {
 
             if let pid = matched {
                 self.shellPid = pid
+                if let tabID = self.activeTabID {
+                    self.shellPidsByTab[tabID] = pid
+                }
                 if let cwd = ProcessHelper.cwd(of: pid) {
                     self.currentDirectory = cwd
                 }
@@ -520,6 +531,9 @@ class TerminalPane: NSView {
                name == shellName,
                let cwd = ProcessHelper.cwd(of: pid) {
                 shellPid = pid
+                if let tabID = activeTabID {
+                    shellPidsByTab[tabID] = pid
+                }
                 currentDirectory = cwd
                 return true
             }
