@@ -124,8 +124,16 @@ class AgentManager {
             guard !visited.contains(current) else { continue }
             visited.insert(current)
 
-            if let name = ProcessHelper.name(of: current),
-               let agentType = Self.knownAgents[name] {
+            // Check proc_name first (fast), then argv[0] via KERN_PROCARGS2
+            // Node.js CLI tools like claude/codex show "node" for proc_name
+            // but "claude"/"codex" for argv[0]
+            let procName = ProcessHelper.name(of: current)
+            if let name = procName, let agentType = Self.knownAgents[name] {
+                return (current, agentType)
+            }
+            if procName == "node" || procName == "bun" || procName == "deno",
+               let cmdName = ProcessHelper.commandName(of: current),
+               let agentType = Self.knownAgents[cmdName] {
                 return (current, agentType)
             }
             stack.append(contentsOf: ProcessHelper.childPidsOf(current))

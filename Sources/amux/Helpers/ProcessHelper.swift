@@ -54,6 +54,31 @@ enum ProcessHelper {
         return String(cString: buffer)
     }
 
+    /// Get the command name (argv[0]) of a process via KERN_PROCARGS2.
+    /// This returns the name the process was invoked as (e.g. "claude" for Claude Code),
+    /// which may differ from proc_name() which returns the binary name (e.g. "node").
+    static func commandName(of pid: pid_t) -> String? {
+        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, Int32(pid)]
+        var size: Int = 0
+        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 0 else { return nil }
+
+        var buf = [CChar](repeating: 0, count: size)
+        guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0 else { return nil }
+        guard size > MemoryLayout<Int32>.size else { return nil }
+
+        // Skip argc (first 4 bytes), then the exec path
+        var idx = MemoryLayout<Int32>.size
+        while idx < size && buf[idx] != 0 { idx += 1 }
+        // Skip null padding between exec path and argv[0]
+        while idx < size && buf[idx] == 0 { idx += 1 }
+        guard idx < size else { return nil }
+
+        // Read argv[0]
+        let argv0 = String(cString: Array(buf[idx...]))
+        // Return just the last path component
+        return URL(fileURLWithPath: argv0).lastPathComponent
+    }
+
     /// Get the foreground process of a shell by walking the process tree to the deepest descendant.
     /// Returns nil if the shell has no children (idle at prompt).
     static func foregroundChild(of shellPid: pid_t) -> pid_t? {
