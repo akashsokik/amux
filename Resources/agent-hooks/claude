@@ -42,14 +42,15 @@ fi
 HOOK_SCRIPT="$SELF_DIR/amux-agent-hook.sh"
 
 # Build hook settings JSON for Claude Code --settings injection
+# Format: EventName -> [matcher groups] -> hooks array (3-level nesting)
 HOOK_SETTINGS=$(cat <<ENDJSON
 {
   "hooks": {
-    "SessionStart": [{"type": "command", "command": "$HOOK_SCRIPT session-start"}],
-    "Stop": [{"type": "command", "command": "$HOOK_SCRIPT stop"}],
-    "Notification": [{"type": "command", "command": "$HOOK_SCRIPT notification"}],
-    "PreToolUse": [{"type": "command", "command": "$HOOK_SCRIPT pre-tool-use"}],
-    "PostToolUse": [{"type": "command", "command": "$HOOK_SCRIPT post-tool-use"}]
+    "SessionStart": [{"matcher": "", "hooks": [{"type": "command", "command": "$HOOK_SCRIPT session-start", "timeout": 10}]}],
+    "Stop": [{"matcher": "", "hooks": [{"type": "command", "command": "$HOOK_SCRIPT stop", "timeout": 10}]}],
+    "Notification": [{"matcher": "", "hooks": [{"type": "command", "command": "$HOOK_SCRIPT notification", "timeout": 10}]}],
+    "PreToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "$HOOK_SCRIPT pre-tool-use", "timeout": 10}]}],
+    "PostToolUse": [{"matcher": "", "hooks": [{"type": "command", "command": "$HOOK_SCRIPT post-tool-use", "timeout": 10}]}]
   }
 }
 ENDJSON
