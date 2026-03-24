@@ -71,7 +71,7 @@ enum ProcessHelper {
     }
 
     /// Get direct child PIDs of a specific process.
-    private static func childPidsOf(_ parent: pid_t) -> [pid_t] {
+    static func childPidsOf(_ parent: pid_t) -> [pid_t] {
         return allProcesses()
             .filter { $0.kp_eproc.e_ppid == parent }
             .map { $0.kp_proc.p_pid }
