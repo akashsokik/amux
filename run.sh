@@ -58,6 +58,11 @@ if [ -f "$SCRIPT_DIR/Resources/AppIcon.icns" ]; then
     cp "$SCRIPT_DIR/Resources/AppIcon.icns" "$RESOURCES_DIR/"
 fi
 
+# Copy SPM resource bundles (tree-sitter grammars, fonts, etc.)
+for bundle in .build/debug/*.bundle; do
+    [ -d "$bundle" ] && cp -R "$bundle" "$RESOURCES_DIR/"
+done
+
 # Copy Ghostty shell integration resources (enables OSC 7/133 for all shells)
 GHOSTTY_RES="$RESOURCES_DIR/ghostty/shell-integration"
 mkdir -p "$GHOSTTY_RES"

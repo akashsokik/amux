@@ -1392,6 +1392,7 @@ class EditorTextContentView: NSView, NSTextViewDelegate {
     private var scrollView: NSScrollView!
     private var textView: NSTextView!
     private var highlighter: TextViewHighlighter?
+    private var highlighterLanguage = ""
     private var isBindingText = false
     private var currentFileExtension = ""
 
@@ -1470,6 +1471,16 @@ class EditorTextContentView: NSView, NSTextViewDelegate {
     }
 
     func setText(_ text: String, fileExtension: String, isEditable: Bool) {
+        let newLang = TreeSitterManager.shared.languageName(for: fileExtension) ?? ""
+        let needsNewHighlighter = highlighterLanguage != newLang
+
+        // If language is changing, tear down old highlighter BEFORE setting text
+        // so the old storage delegate doesn't process the new content.
+        if needsNewHighlighter {
+            highlighter = nil
+            highlighterLanguage = ""
+        }
+
         isBindingText = true
         currentFileExtension = fileExtension
         if textView.string != text {
@@ -1479,7 +1490,12 @@ class EditorTextContentView: NSView, NSTextViewDelegate {
         textView.isSelectable = true
         textView.textColor = isEditable ? Theme.primaryText : Theme.secondaryText
         isBindingText = false
-        configureHighlighter()
+
+        if needsNewHighlighter {
+            configureHighlighter()
+        }
+        // When the language hasn't changed, Neon's storage delegate already
+        // handled the text change -- no need to invalidate again.
     }
 
     func focusEditor() {
@@ -1501,6 +1517,8 @@ class EditorTextContentView: NSView, NSTextViewDelegate {
         } else {
             textView.textColor = Theme.secondaryText
         }
+        // Theme colors changed -- need to recreate highlighter since the
+        // attribute provider closure captures colors at creation time.
         configureHighlighter()
     }
 
@@ -1512,6 +1530,7 @@ class EditorTextContentView: NSView, NSTextViewDelegate {
     private func configureHighlighter() {
         // Drop the old highlighter (resets text storage delegate, etc.)
         highlighter = nil
+        highlighterLanguage = ""
 
         guard let config = TreeSitterManager.shared.configuration(for: currentFileExtension) else {
             // No grammar for this file type -- leave text unstyled
@@ -1544,6 +1563,7 @@ class EditorTextContentView: NSView, NSTextViewDelegate {
                 configuration: highlighterConfig
             )
             highlighter?.observeEnclosingScrollView()
+            highlighterLanguage = TreeSitterManager.shared.languageName(for: currentFileExtension) ?? ""
         } catch {
             // If tree-sitter setup fails, fall back to plain text
             highlighter = nil
@@ -1555,21 +1575,53 @@ class EditorTextContentView: NSView, NSTextViewDelegate {
         let color: NSColor
 
         if tokenName.hasPrefix("keyword") {
-            color = Theme.primary.blended(withFraction: 0.25, of: Theme.primaryText) ?? Theme.primary
+            // Soft pink/magenta
+            color = NSColor.systemPink.blended(withFraction: 0.3, of: Theme.primaryText) ?? .systemPink
         } else if tokenName.hasPrefix("string") {
-            color = Theme.secondary.blended(withFraction: 0.2, of: Theme.primaryText) ?? Theme.secondary
+            // Warm green
+            color = NSColor.systemGreen.blended(withFraction: 0.25, of: Theme.primaryText) ?? .systemGreen
         } else if tokenName.hasPrefix("comment") {
             color = Theme.tertiaryText
         } else if tokenName.hasPrefix("number") || tokenName.hasPrefix("float") {
-            color = Theme.primaryContainer.blended(withFraction: 0.35, of: Theme.primaryText) ?? Theme.primaryContainer
-        } else if tokenName.hasPrefix("type") {
-            color = Theme.onSurfaceVariant
+            // Orange/amber
+            color = NSColor.systemOrange.blended(withFraction: 0.2, of: Theme.primaryText) ?? .systemOrange
+        } else if tokenName.hasPrefix("type") || tokenName.hasPrefix("constructor") {
+            // Teal/cyan
+            color = NSColor.systemTeal.blended(withFraction: 0.2, of: Theme.primaryText) ?? .systemTeal
         } else if tokenName.hasPrefix("function") || tokenName.hasPrefix("method") {
-            color = Theme.primary
-        } else if tokenName.hasPrefix("operator") || tokenName.hasPrefix("punctuation") {
+            // Blue
+            color = NSColor.systemBlue.blended(withFraction: 0.2, of: Theme.primaryText) ?? .systemBlue
+        } else if tokenName.hasPrefix("property") || tokenName.hasPrefix("variable.member") {
+            // Light purple
+            color = NSColor.systemIndigo.blended(withFraction: 0.35, of: Theme.primaryText) ?? .systemIndigo
+        } else if tokenName.hasPrefix("operator") {
             color = Theme.secondaryText
+        } else if tokenName.hasPrefix("punctuation") {
+            color = Theme.tertiaryText
         } else if tokenName.hasPrefix("constant") {
-            color = Theme.secondary
+            // Warm orange
+            color = NSColor.systemOrange.blended(withFraction: 0.3, of: Theme.primaryText) ?? .systemOrange
+        } else if tokenName.hasPrefix("variable") {
+            color = Theme.primaryText
+        } else if tokenName.hasPrefix("tag") {
+            // Red for HTML tags
+            color = NSColor.systemRed.blended(withFraction: 0.3, of: Theme.primaryText) ?? .systemRed
+        } else if tokenName.hasPrefix("attribute") {
+            // Yellow for attributes
+            color = NSColor.systemYellow.blended(withFraction: 0.25, of: Theme.primaryText) ?? .systemYellow
+        } else if tokenName.hasPrefix("text.title") || tokenName.hasPrefix("markup.heading") {
+            // Bold headings
+            color = NSColor.systemBlue.blended(withFraction: 0.15, of: Theme.primaryText) ?? .systemBlue
+        } else if tokenName.hasPrefix("text.uri") || tokenName.hasPrefix("markup.link") {
+            color = NSColor.systemTeal.blended(withFraction: 0.2, of: Theme.primaryText) ?? .systemTeal
+        } else if tokenName.hasPrefix("text.literal") || tokenName.hasPrefix("markup.raw") {
+            color = NSColor.systemGreen.blended(withFraction: 0.25, of: Theme.primaryText) ?? .systemGreen
+        } else if tokenName.hasPrefix("text.reference") {
+            color = NSColor.systemIndigo.blended(withFraction: 0.3, of: Theme.primaryText) ?? .systemIndigo
+        } else if tokenName.hasPrefix("text.emphasis") {
+            color = NSColor.systemYellow.blended(withFraction: 0.3, of: Theme.primaryText) ?? .systemYellow
+        } else if tokenName.hasPrefix("text.strong") {
+            color = NSColor.systemOrange.blended(withFraction: 0.2, of: Theme.primaryText) ?? .systemOrange
         } else {
             color = Theme.primaryText
         }
