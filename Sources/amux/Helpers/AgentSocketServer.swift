@@ -146,12 +146,18 @@ final class AgentSocketServer {
             return
         }
 
-        guard let text = String(bytes: buffer.prefix(bytesRead), encoding: .utf8),
-              let jsonData = text.data(using: .utf8),
+        guard let text = String(bytes: buffer.prefix(bytesRead), encoding: .utf8) else {
+            NSLog("[AgentSocket] Failed to decode bytes as UTF-8")
+            return
+        }
+        NSLog("[AgentSocket] Received: %@", text)
+
+        guard let jsonData = text.data(using: .utf8),
               let json = try? JSONSerialization.jsonObject(with: jsonData) as? [String: Any],
               let paneIdString = json["paneId"] as? String,
               let paneId = UUID(uuidString: paneIdString),
               let event = json["event"] as? String else {
+            NSLog("[AgentSocket] Failed to parse JSON from: %@", text)
             return
         }
 

@@ -170,14 +170,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Set socket path for agent hook communication
         setenv("AMUX_SOCKET_PATH", AgentSocketServer.defaultPath, 1)
+        NSLog("[amux] AMUX_SOCKET_PATH=%@", AgentSocketServer.defaultPath)
 
         // Set AMUX_AGENT_HOOKS_DIR so shell integration scripts can prepend to PATH.
-        // We can't set PATH here because login resets it from /etc/paths.
         if let resourcePath = Bundle.main.resourcePath {
+            NSLog("[amux] Bundle.main.resourcePath=%@", resourcePath)
             let agentHooksDir = (resourcePath as NSString).appendingPathComponent("agent-hooks")
-            if FileManager.default.fileExists(atPath: agentHooksDir) {
+            let exists = FileManager.default.fileExists(atPath: agentHooksDir)
+            NSLog("[amux] agent-hooks dir=%@ exists=%d", agentHooksDir, exists)
+            if exists {
                 setenv("AMUX_AGENT_HOOKS_DIR", agentHooksDir, 1)
             }
+        } else {
+            NSLog("[amux] Bundle.main.resourcePath is nil!")
         }
         // Fallback for dev builds
         if ProcessInfo.processInfo.environment["AMUX_AGENT_HOOKS_DIR"] == nil,
@@ -187,12 +192,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 execURL.deletingLastPathComponent().appendingPathComponent("Resources/agent-hooks").path,
             ]
             for hookPath in candidates {
-                if FileManager.default.fileExists(atPath: hookPath) {
+                let exists = FileManager.default.fileExists(atPath: hookPath)
+                NSLog("[amux] fallback agent-hooks=%@ exists=%d", hookPath, exists)
+                if exists {
                     setenv("AMUX_AGENT_HOOKS_DIR", hookPath, 1)
                     break
                 }
             }
         }
+
+        // Log final state
+        NSLog("[amux] Final AMUX_ZSH_SCRIPT=%@", String(cString: getenv("AMUX_ZSH_SCRIPT") ?? strdup("(not set)")))
+        NSLog("[amux] Final AMUX_AGENT_HOOKS_DIR=%@", String(cString: getenv("AMUX_AGENT_HOOKS_DIR") ?? strdup("(not set)")))
+        NSLog("[amux] Final AMUX_SOCKET_PATH=%@", String(cString: getenv("AMUX_SOCKET_PATH") ?? strdup("(not set)")))
     }
 
     func applicationWillTerminate(_ notification: Notification) {
