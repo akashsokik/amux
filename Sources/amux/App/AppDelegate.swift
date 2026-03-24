@@ -15,7 +15,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Start new terminals in home directory, not wherever the app was launched from
         FileManager.default.changeCurrentDirectoryPath(NSHomeDirectory())
 
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        // Only request notifications when running as a proper .app bundle
+        if Bundle.main.bundleIdentifier != nil {
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+        }
 
         Theme.registerFonts()
         // Initialize ThemeManager before GhosttyApp so colors are ready
@@ -40,8 +43,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         agentManager = AgentManager(sessionManager: sessionManager)
 
         agentSocketServer = AgentSocketServer()
-        agentSocketServer.onEvent = { [weak self] paneID, event, data in
-            self?.agentManager.handleHookEvent(paneID: paneID, event: event, data: data)
+        agentSocketServer.onEvent = { [weak self] paneID, tabID, event, data in
+            self?.agentManager.handleHookEvent(paneID: paneID, tabID: tabID, event: event, data: data)
         }
         agentSocketServer.start()
         agentManager.startPolling()
