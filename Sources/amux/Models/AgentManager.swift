@@ -14,7 +14,7 @@ class AgentManager {
     /// Map of paneID -> sessionID, updated externally.
     var paneSessionMap: [UUID: UUID] = [:]
 
-    static let knownAgents: [String: AgentType] = ["claude": .claudeCode, "codex": .codex]
+    private static let knownAgents: [String: AgentType] = ["claude": .claudeCode, "codex": .codex]
 
     init(sessionManager: SessionManager) {
         self.sessionManager = sessionManager
@@ -77,7 +77,7 @@ class AgentManager {
                     }
                 } else {
                     // New agent process found
-                    let sessionID = paneSessionMap[paneID] ?? UUID()
+                    guard let sessionID = paneSessionMap[paneID] else { continue }
                     let instance = AgentInstance(
                         agentType: agentType,
                         paneID: paneID,
@@ -117,17 +117,18 @@ class AgentManager {
     }
 
     private func findAgentProcess(under shellPid: pid_t) -> (pid_t, AgentType)? {
-        // Depth-first walk using ProcessHelper.childPidsOf
-        let children = ProcessHelper.childPidsOf(shellPid)
-        for child in children {
-            if let name = ProcessHelper.name(of: child),
+        var stack: [pid_t] = ProcessHelper.childPidsOf(shellPid)
+        var visited: Set<pid_t> = [shellPid]
+
+        while let current = stack.popLast() {
+            guard !visited.contains(current) else { continue }
+            visited.insert(current)
+
+            if let name = ProcessHelper.name(of: current),
                let agentType = Self.knownAgents[name] {
-                return (child, agentType)
+                return (current, agentType)
             }
-            // Recurse into children
-            if let found = findAgentProcess(under: child) {
-                return found
-            }
+            stack.append(contentsOf: ProcessHelper.childPidsOf(current))
         }
         return nil
     }

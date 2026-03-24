@@ -1,8 +1,8 @@
 import Foundation
 
 enum AgentType: String, Codable {
-    case claudeCode
-    case codex
+    case claudeCode = "claude_code"
+    case codex = "codex"
 
     var displayName: String {
         switch self {

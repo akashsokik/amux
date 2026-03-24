@@ -20,17 +20,22 @@ if [ "$EVENT" = "notification" ] && [ -n "$STDIN_DATA" ]; then
     MESSAGE=$(echo "$STDIN_DATA" | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('message',''))" 2>/dev/null || echo "")
 fi
 
-# Send JSON payload via Unix socket using python3 (always available on macOS)
+# Send JSON payload via Unix socket
+export AMUX_HOOK_PANE_ID="$PANE_ID"
+export AMUX_HOOK_EVENT="$EVENT"
+export AMUX_HOOK_MESSAGE="$MESSAGE"
+export AMUX_HOOK_SOCKET="$SOCKET"
+
 python3 -c "
-import socket, json, sys
+import socket, json, os
 payload = json.dumps({
-    'paneId': '$PANE_ID',
-    'event': '$EVENT',
-    'data': {'message': '''$MESSAGE'''}
+    'paneId': os.environ['AMUX_HOOK_PANE_ID'],
+    'event': os.environ['AMUX_HOOK_EVENT'],
+    'data': {'message': os.environ.get('AMUX_HOOK_MESSAGE', '')}
 })
 sock = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
 try:
-    sock.connect('$SOCKET')
+    sock.connect(os.environ['AMUX_HOOK_SOCKET'])
     sock.sendall(payload.encode())
 except Exception:
     pass
