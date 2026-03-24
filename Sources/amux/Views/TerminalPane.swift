@@ -90,7 +90,15 @@ class TerminalPane: NSView {
 
     /// All shell PIDs across all tabs (for agent detection).
     var allShellPIDs: [(tabID: UUID, pid: pid_t)] {
-        shellPidsByTab.map { (tabID: $0.key, pid: $0.value) }
+        var result = shellPidsByTab.map { (tabID: $0.key, pid: $0.value) }
+        // Backfill: if the active tab's PID isn't in shellPidsByTab
+        // (e.g. first tab discovered before per-tab tracking), add it
+        if let tabID = activeTabID, let pid = shellPid,
+           shellPidsByTab[tabID] == nil {
+            shellPidsByTab[tabID] = pid
+            result.append((tabID: tabID, pid: pid))
+        }
+        return result
     }
 
     // MARK: - Terminal view accessors
