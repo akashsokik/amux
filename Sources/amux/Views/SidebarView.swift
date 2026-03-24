@@ -8,7 +8,7 @@ protocol SidebarViewDelegate: AnyObject {
     func sidebarCurrentDirectory() -> String?
     func sidebarDidRequestOpenWorktree(path: String)
     func sidebarDidSelectFile(path: String)
-    func sidebarDidRequestFocusAgentPane(paneID: UUID, sessionID: UUID)
+    func sidebarDidRequestFocusAgentPane(paneID: UUID, tabID: UUID?, sessionID: UUID)
     func sidebarDidRequestSendInterrupt(agent: AgentInstance)
     func sidebarDidRequestKillAgent(agent: AgentInstance)
 }
@@ -546,8 +546,8 @@ extension SidebarView: FileTreeViewDelegate {
 // MARK: - AgentListViewDelegate
 
 extension SidebarView: AgentListViewDelegate {
-    func agentListDidRequestFocusPane(paneID: UUID, sessionID: UUID) {
-        delegate?.sidebarDidRequestFocusAgentPane(paneID: paneID, sessionID: sessionID)
+    func agentListDidRequestFocusPane(paneID: UUID, tabID: UUID?, sessionID: UUID) {
+        delegate?.sidebarDidRequestFocusAgentPane(paneID: paneID, tabID: tabID, sessionID: sessionID)
     }
     func agentListDidRequestSendInterrupt(agent: AgentInstance) {
         delegate?.sidebarDidRequestSendInterrupt(agent: agent)

@@ -3,7 +3,7 @@ import AppKit
 // MARK: - Delegate Protocol
 
 protocol AgentListViewDelegate: AnyObject {
-    func agentListDidRequestFocusPane(paneID: UUID, sessionID: UUID)
+    func agentListDidRequestFocusPane(paneID: UUID, tabID: UUID?, sessionID: UUID)
     func agentListDidRequestSendInterrupt(agent: AgentInstance)
     func agentListDidRequestKillAgent(agent: AgentInstance)
 }
@@ -218,6 +218,7 @@ class AgentListView: NSView {
         if let wrapper = item as? AgentWrapper {
             delegate?.agentListDidRequestFocusPane(
                 paneID: wrapper.agent.paneID,
+                tabID: wrapper.agent.tabID,
                 sessionID: wrapper.agent.sessionID
             )
         }
@@ -233,7 +234,7 @@ class AgentListView: NSView {
 
     @objc private func focusPaneClicked(_ sender: NSMenuItem) {
         guard let agent = sender.representedObject as? AgentInstance else { return }
-        delegate?.agentListDidRequestFocusPane(paneID: agent.paneID, sessionID: agent.sessionID)
+        delegate?.agentListDidRequestFocusPane(paneID: agent.paneID, tabID: agent.tabID, sessionID: agent.sessionID)
     }
 
     @objc private func sendInterruptClicked(_ sender: NSMenuItem) {

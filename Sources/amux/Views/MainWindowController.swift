@@ -654,13 +654,16 @@ extension MainWindowController: SidebarViewDelegate {
         editorSidebarView.openFile(at: path)
     }
 
-    func sidebarDidRequestFocusAgentPane(paneID: UUID, sessionID: UUID) {
+    func sidebarDidRequestFocusAgentPane(paneID: UUID, tabID: UUID?, sessionID: UUID) {
         if let idx = sessionManager.sessions.firstIndex(where: { $0.id == sessionID }) {
             sessionManager.activeSessionIndex = idx
             let session = sessionManager.sessions[idx]
             displaySession(session)
             session.focusedPaneID = paneID
             if let pane = splitContainerView.pane(for: paneID) {
+                if let tabID = tabID {
+                    pane.switchToTab(tabID)
+                }
                 pane.focus()
             }
             sidebarView.reloadSessions()
