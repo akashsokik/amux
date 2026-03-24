@@ -222,7 +222,7 @@ class MainWindowController: NSWindowController {
         splitContainerView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(splitContainerView)
 
-        sidebarView = SidebarView(sessionManager: sessionManager)
+        sidebarView = SidebarView(sessionManager: sessionManager, agentManager: agentManager)
         sidebarView.translatesAutoresizingMaskIntoConstraints = false
         sidebarView.delegate = self
         contentView.addSubview(sidebarView)
@@ -652,6 +652,27 @@ extension MainWindowController: SidebarViewDelegate {
             toggleEditorSidebar()
         }
         editorSidebarView.openFile(at: path)
+    }
+
+    func sidebarDidRequestFocusAgentPane(paneID: UUID, sessionID: UUID) {
+        if let idx = sessionManager.sessions.firstIndex(where: { $0.id == sessionID }) {
+            sessionManager.activeSessionIndex = idx
+            let session = sessionManager.sessions[idx]
+            displaySession(session)
+            session.focusedPaneID = paneID
+            if let pane = splitContainerView.pane(for: paneID) {
+                pane.focus()
+            }
+            sidebarView.reloadSessions()
+        }
+    }
+
+    func sidebarDidRequestSendInterrupt(agent: AgentInstance) {
+        agentManager.sendInterrupt(to: agent)
+    }
+
+    func sidebarDidRequestKillAgent(agent: AgentInstance) {
+        agentManager.killAgent(agent)
     }
 
     func sidebarDidRequestRenameSession(_ session: Session) {

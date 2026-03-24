@@ -8,6 +8,9 @@ protocol SidebarViewDelegate: AnyObject {
     func sidebarCurrentDirectory() -> String?
     func sidebarDidRequestOpenWorktree(path: String)
     func sidebarDidSelectFile(path: String)
+    func sidebarDidRequestFocusAgentPane(paneID: UUID, sessionID: UUID)
+    func sidebarDidRequestSendInterrupt(agent: AgentInstance)
+    func sidebarDidRequestKillAgent(agent: AgentInstance)
 }
 
 enum SidebarMode {
@@ -15,6 +18,7 @@ enum SidebarMode {
     case fileTree
     case worktrees
     case gitStatus
+    case agents
 }
 
 class SidebarView: NSView {
@@ -44,18 +48,29 @@ class SidebarView: NSView {
     private var worktreeView: WorktreeView!
     private var gitStatusView: GitStatusView!
 
+    // Agents
+    private var agentsButton: DimIconButton!
+    private var agentListView: AgentListView!
+    private var agentsBadge: NSView!
+    private var agentManager: AgentManager!
+
     private(set) var mode: SidebarMode = .sessions
 
     private static let rowHeight: CGFloat = 34
     private static let sessionCellID = NSUserInterfaceItemIdentifier("SessionCell")
 
-    init(sessionManager: SessionManager) {
+    init(sessionManager: SessionManager, agentManager: AgentManager) {
         self.sessionManager = sessionManager
+        self.agentManager = agentManager
         super.init(frame: .zero)
         setupUI()
         NotificationCenter.default.addObserver(
             self, selector: #selector(themeDidChange),
             name: Theme.didChangeNotification, object: nil
+        )
+        NotificationCenter.default.addObserver(
+            self, selector: #selector(attentionCountDidChange),
+            name: AgentManager.attentionCountDidChangeNotification, object: nil
         )
     }
 
@@ -71,6 +86,7 @@ class SidebarView: NSView {
         fileTreeButton.isActiveState = mode == .fileTree
         worktreeButton.isActiveState = mode == .worktrees
         gitStatusButton.isActiveState = mode == .gitStatus
+        agentsButton.isActiveState = mode == .agents
         tableView.reloadData()
     }
 
@@ -125,6 +141,7 @@ class SidebarView: NSView {
         setupFileTree()
         setupWorktreeView()
         setupGitStatusView()
+        setupAgentListView()
         setupSeparatorLine()
         setupConstraints()
         applyGlassOrSolid()
@@ -148,6 +165,17 @@ class SidebarView: NSView {
         gitStatusButton = makeIconBarButton(symbolName: "chart.bar.doc.horizontal", action: #selector(gitStatusButtonClicked))
         iconBar.addSubview(gitStatusButton)
 
+        agentsButton = makeIconBarButton(symbolName: "cpu", action: #selector(agentsButtonClicked))
+        iconBar.addSubview(agentsButton)
+
+        agentsBadge = NSView()
+        agentsBadge.translatesAutoresizingMaskIntoConstraints = false
+        agentsBadge.wantsLayer = true
+        agentsBadge.layer?.backgroundColor = NSColor(srgbRed: 0.878, green: 0.424, blue: 0.459, alpha: 1.0).cgColor
+        agentsBadge.layer?.cornerRadius = 4
+        agentsBadge.isHidden = true
+        iconBar.addSubview(agentsBadge)
+
         NSLayoutConstraint.activate([
             sessionsButton.leadingAnchor.constraint(equalTo: iconBar.leadingAnchor, constant: 14),
             sessionsButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
@@ -168,6 +196,16 @@ class SidebarView: NSView {
             gitStatusButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
             gitStatusButton.widthAnchor.constraint(equalToConstant: 24),
             gitStatusButton.heightAnchor.constraint(equalToConstant: 24),
+
+            agentsButton.leadingAnchor.constraint(equalTo: gitStatusButton.trailingAnchor, constant: 6),
+            agentsButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
+            agentsButton.widthAnchor.constraint(equalToConstant: 24),
+            agentsButton.heightAnchor.constraint(equalToConstant: 24),
+
+            agentsBadge.widthAnchor.constraint(equalToConstant: 8),
+            agentsBadge.heightAnchor.constraint(equalToConstant: 8),
+            agentsBadge.topAnchor.constraint(equalTo: agentsButton.topAnchor, constant: -1),
+            agentsBadge.trailingAnchor.constraint(equalTo: agentsButton.trailingAnchor, constant: 3),
         ])
 
         iconBarSeparator = NSView()
@@ -222,6 +260,14 @@ class SidebarView: NSView {
         gitStatusView.translatesAutoresizingMaskIntoConstraints = false
         gitStatusView.isHidden = true
         addSubview(gitStatusView)
+    }
+
+    private func setupAgentListView() {
+        agentListView = AgentListView(agentManager: agentManager, sessionManager: sessionManager)
+        agentListView.translatesAutoresizingMaskIntoConstraints = false
+        agentListView.isHidden = true
+        agentListView.delegate = self
+        addSubview(agentListView)
     }
 
     private func setupHeader() {
@@ -330,6 +376,12 @@ class SidebarView: NSView {
             gitStatusView.trailingAnchor.constraint(equalTo: contentTrailing),
             gitStatusView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
+            // Agent list view (same region, toggled via isHidden)
+            agentListView.topAnchor.constraint(equalTo: iconBarSeparator.bottomAnchor),
+            agentListView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            agentListView.trailingAnchor.constraint(equalTo: contentTrailing),
+            agentListView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
             // Right edge separator
             separatorLine.topAnchor.constraint(equalTo: topAnchor),
             separatorLine.trailingAnchor.constraint(equalTo: trailingAnchor),
@@ -344,6 +396,12 @@ class SidebarView: NSView {
     @objc private func fileTreeButtonClicked() { setMode(.fileTree) }
     @objc private func worktreeButtonClicked() { setMode(.worktrees) }
     @objc private func gitStatusButtonClicked() { setMode(.gitStatus) }
+    @objc private func agentsButtonClicked() { setMode(.agents) }
+
+    @objc private func attentionCountDidChange() {
+        let count = agentManager.attentionCount
+        agentsBadge.isHidden = count == 0
+    }
 
     private func setMode(_ newMode: SidebarMode) {
         mode = newMode
@@ -351,12 +409,14 @@ class SidebarView: NSView {
         fileTreeButton.isActiveState = mode == .fileTree
         worktreeButton.isActiveState = mode == .worktrees
         gitStatusButton.isActiveState = mode == .gitStatus
+        agentsButton.isActiveState = mode == .agents
 
         headerLabel.isHidden = mode != .sessions
         scrollView.isHidden = mode != .sessions
         fileTreeView.isHidden = mode != .fileTree
         worktreeView.isHidden = mode != .worktrees
         gitStatusView.isHidden = mode != .gitStatus
+        agentListView.isHidden = mode != .agents
 
         let dir = delegate?.sidebarCurrentDirectory()
         if mode == .fileTree {
@@ -480,6 +540,20 @@ extension SidebarView: NSMenuDelegate {
 extension SidebarView: FileTreeViewDelegate {
     func fileTreeView(_ view: FileTreeView, didSelectFileAt path: String) {
         delegate?.sidebarDidSelectFile(path: path)
+    }
+}
+
+// MARK: - AgentListViewDelegate
+
+extension SidebarView: AgentListViewDelegate {
+    func agentListDidRequestFocusPane(paneID: UUID, sessionID: UUID) {
+        delegate?.sidebarDidRequestFocusAgentPane(paneID: paneID, sessionID: sessionID)
+    }
+    func agentListDidRequestSendInterrupt(agent: AgentInstance) {
+        delegate?.sidebarDidRequestSendInterrupt(agent: agent)
+    }
+    func agentListDidRequestKillAgent(agent: AgentInstance) {
+        delegate?.sidebarDidRequestKillAgent(agent: agent)
     }
 }
 
