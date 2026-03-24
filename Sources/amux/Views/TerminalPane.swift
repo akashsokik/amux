@@ -213,6 +213,18 @@ class TerminalPane: NSView {
         return tv
     }
 
+    private func withSurfaceEnvironment(forTabID tabID: UUID, _ body: () -> Void) {
+        let statusPath = "\(TerminalPane.statusDir)/\(paneID.uuidString)"
+        statusFilePath = statusPath
+        setenv("AMUX_STATUS_FILE", statusPath, 1)
+        setenv("AMUX_PANE_ID", paneID.uuidString, 1)
+        setenv("AMUX_TAB_ID", tabID.uuidString, 1)
+        body()
+        unsetenv("AMUX_STATUS_FILE")
+        unsetenv("AMUX_PANE_ID")
+        unsetenv("AMUX_TAB_ID")
+    }
+
     // MARK: - Tab Operations
 
     func addNewTab() {
@@ -243,13 +255,9 @@ class TerminalPane: NSView {
            let ghosttyApp = appDelegate.ghosttyApp,
            let app = ghosttyApp.app {
             let pidsBefore = Set(ProcessHelper.childPids())
-            let statusPath = "\(TerminalPane.statusDir)/\(paneID.uuidString)"
-            self.statusFilePath = statusPath
-            setenv("AMUX_STATUS_FILE", statusPath, 1)
-            setenv("AMUX_PANE_ID", paneID.uuidString, 1)
-            tv.createSurface(app: app)
-            unsetenv("AMUX_STATUS_FILE")
-            unsetenv("AMUX_PANE_ID")
+            withSurfaceEnvironment(forTabID: tabID) {
+                tv.createSurface(app: app)
+            }
             // Discover shell PID for the new tab (with retries for fish etc.)
             discoverShellPid(pidsBefore: pidsBefore, attempt: 0, forTabID: tabID)
         }
@@ -457,8 +465,10 @@ class TerminalPane: NSView {
 
     func createSurface(ghosttyApp: GhosttyApp) {
         guard let app = ghosttyApp.app else { return }
-        for (_, tv) in terminalViewsByTab {
-            tv.createSurface(app: app)
+        for (tabID, tv) in terminalViewsByTab {
+            withSurfaceEnvironment(forTabID: tabID) {
+                tv.createSurface(app: app)
+            }
         }
     }
 
@@ -470,15 +480,11 @@ class TerminalPane: NSView {
            let ghosttyApp = appDelegate.ghosttyApp,
            let app = ghosttyApp.app {
             let pidsBefore = Set(ProcessHelper.childPids())
-            let statusPath = "\(TerminalPane.statusDir)/\(paneID.uuidString)"
-            self.statusFilePath = statusPath
-            setenv("AMUX_STATUS_FILE", statusPath, 1)
-            setenv("AMUX_PANE_ID", paneID.uuidString, 1)
-            for (_, tv) in terminalViewsByTab where tv.surface == nil {
-                tv.createSurface(app: app)
+            for (tabID, tv) in terminalViewsByTab where tv.surface == nil {
+                withSurfaceEnvironment(forTabID: tabID) {
+                    tv.createSurface(app: app)
+                }
             }
-            unsetenv("AMUX_STATUS_FILE")
-            unsetenv("AMUX_PANE_ID")
             // Discover the shell PID spawned by the new surface.
             // Use retries with increasing delays to handle shells like fish
             // that may take longer to appear in the process table.

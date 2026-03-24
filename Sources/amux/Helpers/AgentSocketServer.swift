@@ -3,7 +3,7 @@ import Foundation
 
 /// Unix domain socket server for receiving structured events from agent hook scripts.
 /// Hook scripts connect and send JSON messages of the form:
-///   {"paneId": "uuid-string", "event": "event-name", "data": {...}}
+///   {"paneId": "uuid-string", "tabId": "uuid-string?", "event": "event-name", "data": {...}}
 final class AgentSocketServer {
 
     /// Socket path for the current process.
@@ -15,7 +15,7 @@ final class AgentSocketServer {
     let path: String
 
     /// Called on the main queue when a valid event arrives.
-    var onEvent: ((UUID, String, [String: Any]) -> Void)?
+    var onEvent: ((UUID, UUID?, String, [String: Any]) -> Void)?
 
     private var listenFD: Int32 = -1
     private var listenSource: DispatchSourceRead?
@@ -155,7 +155,13 @@ final class AgentSocketServer {
             return
         }
 
+        let tabId: UUID?
+        if let tabIdString = json["tabId"] as? String {
+            tabId = UUID(uuidString: tabIdString)
+        } else {
+            tabId = nil
+        }
         let data = json["data"] as? [String: Any] ?? [:]
-        onEvent?(paneId, event, data)
+        onEvent?(paneId, tabId, event, data)
     }
 }

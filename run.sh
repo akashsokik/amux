@@ -81,6 +81,18 @@ if [ -d "$AMUX_SHELL_SRC" ]; then
     cp -R "$AMUX_SHELL_SRC"/* "$AMUX_SHELL_INTEG/"
 fi
 
+# Inject amux zsh sourcing into Ghostty's .zshenv so it auto-loads in every zsh session
+GHOSTTY_ZSHENV="$GHOSTTY_RES/zsh/.zshenv"
+if [ -f "$GHOSTTY_ZSHENV" ]; then
+    cat >> "$GHOSTTY_ZSHENV" << 'ZSHEOF'
+
+# -- amux shell integration (injected by build) --
+if [[ -n "$AMUX_ZSH_SCRIPT" && -r "$AMUX_ZSH_SCRIPT" ]]; then
+    'builtin' 'source' '--' "$AMUX_ZSH_SCRIPT"
+fi
+ZSHEOF
+fi
+
 # Copy agent hook scripts (claude wrapper + hook helper)
 AGENT_HOOKS_SRC="$SCRIPT_DIR/Resources/agent-hooks"
 AGENT_HOOKS_DST="$RESOURCES_DIR/agent-hooks"

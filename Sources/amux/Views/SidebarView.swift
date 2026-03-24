@@ -15,10 +15,10 @@ protocol SidebarViewDelegate: AnyObject {
 
 enum SidebarMode {
     case sessions
+    case agents
     case fileTree
     case worktrees
     case gitStatus
-    case agents
 }
 
 class SidebarView: NSView {
@@ -72,6 +72,7 @@ class SidebarView: NSView {
             self, selector: #selector(attentionCountDidChange),
             name: AgentManager.attentionCountDidChangeNotification, object: nil
         )
+        attentionCountDidChange()
     }
 
     deinit {
@@ -156,6 +157,9 @@ class SidebarView: NSView {
         sessionsButton.isActiveState = true
         iconBar.addSubview(sessionsButton)
 
+        agentsButton = makeIconBarButton(symbolName: "command.square", action: #selector(agentsButtonClicked))
+        iconBar.addSubview(agentsButton)
+
         fileTreeButton = makeIconBarButton(symbolName: "folder", action: #selector(fileTreeButtonClicked))
         iconBar.addSubview(fileTreeButton)
 
@@ -164,9 +168,6 @@ class SidebarView: NSView {
 
         gitStatusButton = makeIconBarButton(symbolName: "chart.bar.doc.horizontal", action: #selector(gitStatusButtonClicked))
         iconBar.addSubview(gitStatusButton)
-
-        agentsButton = makeIconBarButton(symbolName: "cpu", action: #selector(agentsButtonClicked))
-        iconBar.addSubview(agentsButton)
 
         agentsBadge = NSView()
         agentsBadge.translatesAutoresizingMaskIntoConstraints = false
@@ -182,7 +183,12 @@ class SidebarView: NSView {
             sessionsButton.widthAnchor.constraint(equalToConstant: 24),
             sessionsButton.heightAnchor.constraint(equalToConstant: 24),
 
-            fileTreeButton.leadingAnchor.constraint(equalTo: sessionsButton.trailingAnchor, constant: 6),
+            agentsButton.leadingAnchor.constraint(equalTo: sessionsButton.trailingAnchor, constant: 6),
+            agentsButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
+            agentsButton.widthAnchor.constraint(equalToConstant: 24),
+            agentsButton.heightAnchor.constraint(equalToConstant: 24),
+
+            fileTreeButton.leadingAnchor.constraint(equalTo: agentsButton.trailingAnchor, constant: 6),
             fileTreeButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
             fileTreeButton.widthAnchor.constraint(equalToConstant: 24),
             fileTreeButton.heightAnchor.constraint(equalToConstant: 24),
@@ -196,11 +202,6 @@ class SidebarView: NSView {
             gitStatusButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
             gitStatusButton.widthAnchor.constraint(equalToConstant: 24),
             gitStatusButton.heightAnchor.constraint(equalToConstant: 24),
-
-            agentsButton.leadingAnchor.constraint(equalTo: gitStatusButton.trailingAnchor, constant: 6),
-            agentsButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
-            agentsButton.widthAnchor.constraint(equalToConstant: 24),
-            agentsButton.heightAnchor.constraint(equalToConstant: 24),
 
             agentsBadge.widthAnchor.constraint(equalToConstant: 8),
             agentsBadge.heightAnchor.constraint(equalToConstant: 8),
