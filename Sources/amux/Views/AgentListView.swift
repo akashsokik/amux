@@ -632,7 +632,7 @@ private class AgentCellView: NSView {
             subtitleLabel.stringValue = agent.notificationMessage ?? ""
             subtitleLabel.textColor = warningColor
         default:
-            subtitleLabel.stringValue = agent.workingDirectory ?? ""
+            subtitleLabel.stringValue = (agent.workingDirectory as NSString?)?.lastPathComponent ?? ""
             subtitleLabel.textColor = Theme.tertiaryText
         }
 
