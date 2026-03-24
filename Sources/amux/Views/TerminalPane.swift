@@ -243,7 +243,7 @@ class TerminalPane: NSView {
             unsetenv("AMUX_STATUS_FILE")
             unsetenv("AMUX_PANE_ID")
             // Discover shell PID for the new tab (with retries for fish etc.)
-            discoverShellPid(pidsBefore: pidsBefore, attempt: 0)
+            discoverShellPid(pidsBefore: pidsBefore, attempt: 0, forTabID: tabID)
         }
 
         tv.isFocused = isFocused
@@ -474,23 +474,26 @@ class TerminalPane: NSView {
             // Discover the shell PID spawned by the new surface.
             // Use retries with increasing delays to handle shells like fish
             // that may take longer to appear in the process table.
-            discoverShellPid(pidsBefore: pidsBefore, attempt: 0)
+            discoverShellPid(pidsBefore: pidsBefore, attempt: 0, forTabID: activeTabID)
         }
     }
 
     /// Attempt to discover the shell PID with retries.
     /// Fish shell can take longer to start than bash/zsh, so we retry
     /// at increasing intervals: 0.5s, 1.0s, 2.0s.
-    private func discoverShellPid(pidsBefore: Set<pid_t>, attempt: Int) {
+    private func discoverShellPid(pidsBefore: Set<pid_t>, attempt: Int, forTabID tabID: UUID?) {
         let delays: [TimeInterval] = [0.5, 1.0, 2.0]
         guard attempt < delays.count else {
             // All retries exhausted -- fall back to name-based matching
-            discoverShellPidByName()
+            discoverShellPidByName(forTabID: tabID)
             return
         }
 
         DispatchQueue.main.asyncAfter(deadline: .now() + delays[attempt]) { [weak self] in
-            guard let self = self, self.shellPid == nil else { return }
+            guard let self = self else { return }
+            // Check if THIS tab's PID was already found (not the pane-global one)
+            if let t = tabID, self.shellPidsByTab[t] != nil { return }
+            if tabID == nil && self.shellPid != nil { return }
 
             // Try PID subtraction first (most reliable when it works)
             let pidsAfter = Set(ProcessHelper.childPids())
@@ -504,8 +507,8 @@ class TerminalPane: NSView {
 
             if let pid = matched {
                 self.shellPid = pid
-                if let tabID = self.activeTabID {
-                    self.shellPidsByTab[tabID] = pid
+                if let t = tabID {
+                    self.shellPidsByTab[t] = pid
                 }
                 if let cwd = ProcessHelper.cwd(of: pid) {
                     self.currentDirectory = cwd
@@ -514,25 +517,28 @@ class TerminalPane: NSView {
             }
 
             // Try name-based matching as fallback before next retry
-            if self.discoverShellPidByName() { return }
+            if self.discoverShellPidByName(forTabID: tabID) { return }
 
             // Retry with next delay
-            self.discoverShellPid(pidsBefore: pidsBefore, attempt: attempt + 1)
+            self.discoverShellPid(pidsBefore: pidsBefore, attempt: attempt + 1, forTabID: tabID)
         }
     }
 
     /// Try to find the shell PID by matching process names against the user's shell.
     @discardableResult
-    private func discoverShellPidByName() -> Bool {
+    private func discoverShellPidByName(forTabID tabID: UUID? = nil) -> Bool {
         let shellName = URL(fileURLWithPath: TerminalPane.userShell()).lastPathComponent
+        let knownPids = Set(shellPidsByTab.values)
         let children = ProcessHelper.childPids()
         for pid in children {
+            // Skip PIDs already claimed by other tabs
+            guard !knownPids.contains(pid) else { continue }
             if let name = ProcessHelper.name(of: pid),
                name == shellName,
                let cwd = ProcessHelper.cwd(of: pid) {
                 shellPid = pid
-                if let tabID = activeTabID {
-                    shellPidsByTab[tabID] = pid
+                if let t = tabID {
+                    shellPidsByTab[t] = pid
                 }
                 currentDirectory = cwd
                 return true
