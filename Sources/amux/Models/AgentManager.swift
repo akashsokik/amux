@@ -24,7 +24,7 @@ class AgentManager {
 
     func startPolling() {
         pollTimer?.invalidate()
-        pollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        pollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             self?.scanForAgents()
         }
     }
@@ -68,15 +68,13 @@ class AgentManager {
                 if let existingAgentID = agentsByPane[paneID],
                    let existingAgent = agents[existingAgentID],
                    existingAgent.pid == agentPid {
-                    // Already tracked with same pid -- update inferred state if no hook support
-                    if !hasHookSupport(existingAgent) {
-                        let inferred = inferState(agentPid: agentPid)
-                        if existingAgent.state != inferred {
-                            existingAgent.updateState(inferred)
-                        }
+                    // Already tracked -- keep current state (hooks update it, or it stays .working)
+                    // Update working directory periodically
+                    if let cwd = ProcessHelper.cwd(of: agentPid) {
+                        existingAgent.workingDirectory = cwd
                     }
                 } else {
-                    // New agent process found
+                    // New agent process found -- mark as working immediately
                     guard let sessionID = paneSessionMap[paneID] else { continue }
                     let instance = AgentInstance(
                         agentType: agentType,
@@ -84,6 +82,7 @@ class AgentManager {
                         sessionID: sessionID,
                         pid: agentPid
                     )
+                    instance.updateState(.working)
                     instance.workingDirectory = ProcessHelper.cwd(of: agentPid)
                     agents[instance.id] = instance
                     agentsByPane[paneID] = instance.id
@@ -139,11 +138,6 @@ class AgentManager {
             stack.append(contentsOf: ProcessHelper.childPidsOf(current))
         }
         return nil
-    }
-
-    private func inferState(agentPid: pid_t) -> AgentState {
-        let children = ProcessHelper.childPidsOf(agentPid)
-        return children.isEmpty ? .idle : .working
     }
 
     private func hasHookSupport(_ agent: AgentInstance) -> Bool {

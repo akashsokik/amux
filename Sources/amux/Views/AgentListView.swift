@@ -500,7 +500,7 @@ private class TypeGroupHeaderCell: NSView {
 
 private class AgentCellView: NSView {
     private let highlightView = NSView()
-    private let stateDot = NSView()
+    private let stateIndicator = NSView()
     private let nameLabel = NSTextField(labelWithString: "")
     private let durationLabel = NSTextField(labelWithString: "")
     private let subtitleLabel = NSTextField(labelWithString: "")
@@ -526,10 +526,10 @@ private class AgentCellView: NSView {
         highlightView.layer?.cornerRadius = Theme.CornerRadius.element
         addSubview(highlightView)
 
-        stateDot.translatesAutoresizingMaskIntoConstraints = false
-        stateDot.wantsLayer = true
-        stateDot.layer?.cornerRadius = 4
-        addSubview(stateDot)
+        stateIndicator.translatesAutoresizingMaskIntoConstraints = false
+        stateIndicator.wantsLayer = true
+        stateIndicator.layer?.cornerRadius = 0
+        addSubview(stateIndicator)
 
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
         nameLabel.font = Theme.Fonts.body(size: 13)
@@ -570,13 +570,13 @@ private class AgentCellView: NSView {
             highlightView.topAnchor.constraint(equalTo: topAnchor, constant: 1),
             highlightView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
 
-            stateDot.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            stateDot.topAnchor.constraint(equalTo: topAnchor, constant: 10),
-            stateDot.widthAnchor.constraint(equalToConstant: 8),
-            stateDot.heightAnchor.constraint(equalToConstant: 8),
+            stateIndicator.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
+            stateIndicator.topAnchor.constraint(equalTo: topAnchor, constant: 10),
+            stateIndicator.widthAnchor.constraint(equalToConstant: 8),
+            stateIndicator.heightAnchor.constraint(equalToConstant: 8),
 
-            nameLabel.leadingAnchor.constraint(equalTo: stateDot.trailingAnchor, constant: 8),
-            nameLabel.centerYAnchor.constraint(equalTo: stateDot.centerYAnchor),
+            nameLabel.leadingAnchor.constraint(equalTo: stateIndicator.trailingAnchor, constant: 8),
+            nameLabel.centerYAnchor.constraint(equalTo: stateIndicator.centerYAnchor),
             nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: durationLabel.leadingAnchor, constant: -8),
 
             durationLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
@@ -603,7 +603,7 @@ private class AgentCellView: NSView {
         durationLabel.textColor = Theme.tertiaryText
 
         let dotColor = stateColor(for: agent.state)
-        stateDot.layer?.backgroundColor = dotColor.cgColor
+        stateIndicator.layer?.backgroundColor = dotColor.cgColor
         attentionTintColor = agent.state.isAttentionRequired ? dotColor : nil
 
         // Pulsing animation for attention-required states
@@ -615,9 +615,9 @@ private class AgentCellView: NSView {
             pulse.duration = 0.8
             pulse.autoreverses = true
             pulse.repeatCount = .infinity
-            stateDot.layer?.add(pulse, forKey: "pulse")
+            stateIndicator.layer?.add(pulse, forKey: "pulse")
         default:
-            stateDot.layer?.removeAnimation(forKey: "pulse")
+            stateIndicator.layer?.removeAnimation(forKey: "pulse")
         }
 
         // Subtitle
