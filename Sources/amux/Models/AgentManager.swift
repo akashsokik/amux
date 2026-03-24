@@ -99,10 +99,10 @@ class AgentManager {
             }
         }
 
-        // Remove exited agents after 30 seconds
+        // Remove exited agents after 3 seconds
         let now = Date()
         let toRemove = agents.filter { (_, agent) in
-            agent.state == .exited && now.timeIntervalSince(agent.lastStateChange) > 30
+            agent.state == .exited && now.timeIntervalSince(agent.lastStateChange) > 3
         }
         for (id, agent) in toRemove {
             agents.removeValue(forKey: id)
