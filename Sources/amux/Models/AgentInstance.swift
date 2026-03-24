@@ -27,6 +27,17 @@ enum AgentState: Equatable {
     case needsPermission
     case exited
 
+    var displayName: String {
+        switch self {
+        case .starting: return "starting"
+        case .working: return "working"
+        case .idle: return "idle"
+        case .needsInput: return "needs input"
+        case .needsPermission: return "needs permission"
+        case .exited: return "exited"
+        }
+    }
+
     var isAttentionRequired: Bool {
         switch self {
         case .needsInput, .needsPermission:

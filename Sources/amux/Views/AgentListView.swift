@@ -595,7 +595,7 @@ private class AgentCellView: NSView {
     }
 
     func configure(agent: AgentInstance) {
-        nameLabel.stringValue = agent.agentType.displayName
+        nameLabel.stringValue = "\(agent.agentType.displayName) (\(agent.state.displayName))"
         nameLabel.font = Theme.Fonts.body(size: 13)
         nameLabel.textColor = Theme.secondaryText
 
