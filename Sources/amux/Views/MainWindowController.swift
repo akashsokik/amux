@@ -97,6 +97,7 @@ class MainWindowController: NSWindowController {
     private let maxEditorSidebarWidth: CGFloat = 500
 
     private let sessionManager: SessionManager
+    private(set) var agentManager: AgentManager
     private var toolbarButtons: [ToolbarIconButton] = []
     private var toolbarEditorDropdown: EditorDropdownButton?
     private var statusPollTimer: Timer?
@@ -106,8 +107,9 @@ class MainWindowController: NSWindowController {
     private let minSidebarWidth: CGFloat = 150
     private let maxSidebarWidth: CGFloat = 400
 
-    init(sessionManager: SessionManager) {
+    init(sessionManager: SessionManager, agentManager: AgentManager) {
         self.sessionManager = sessionManager
+        self.agentManager = agentManager
 
         let window = MainWindowController.createWindow()
         super.init(window: window)
@@ -419,6 +421,9 @@ class MainWindowController: NSWindowController {
     // MARK: - Status polling
 
     private func pollSessionStatuses() {
+        // Feed shell PIDs to agent manager each poll cycle
+        splitContainerView.updateAgentManagerMappings()
+
         // Update global status bar from focused pane using Ghostty-provided CWD
         if let activeSession = sessionManager.activeSession,
            let focusedID = activeSession.focusedPaneID,

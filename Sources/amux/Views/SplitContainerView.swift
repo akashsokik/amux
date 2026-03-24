@@ -10,6 +10,7 @@ class SplitContainerView: NSView {
     private var splitTree: SplitTree?
     private var glassView: GlassBackgroundView?
     weak var containerDelegate: SplitContainerViewDelegate?
+    weak var agentManager: AgentManager?
 
     /// Map pane IDs to TerminalPane views for the CURRENT session.
     private(set) var paneViews: [UUID: TerminalPane] = [:]
@@ -346,6 +347,28 @@ class SplitContainerView: NSView {
     func focusPane(_ id: UUID) {
         focusedPaneID = id
         paneViews[id]?.focus()
+    }
+
+    /// Iterate all active panes and feed their shell PIDs to the agent manager.
+    func updateAgentManagerMappings() {
+        guard let agentManager = agentManager,
+              let sessionID = currentSessionID else { return }
+        for (paneID, pane) in paneViews {
+            if let pid = pane.shellProcessID {
+                agentManager.paneShellPids[paneID] = pid
+                agentManager.paneSessionMap[paneID] = sessionID
+            }
+        }
+        // Also update cached (inactive) session panes
+        for (cachedSessionID, cachedPanes) in sessionPaneCache {
+            guard cachedSessionID != currentSessionID else { continue }
+            for (paneID, pane) in cachedPanes {
+                if let pid = pane.shellProcessID {
+                    agentManager.paneShellPids[paneID] = pid
+                    agentManager.paneSessionMap[paneID] = cachedSessionID
+                }
+            }
+        }
     }
 
     // MARK: - Dimension for divider drag

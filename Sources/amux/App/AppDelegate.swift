@@ -6,6 +6,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private var sessionManager: SessionManager!
     private var windowController: MainWindowController!
     private(set) var ghosttyApp: GhosttyApp?
+    private(set) var agentManager: AgentManager!
+    private var agentSocketServer: AgentSocketServer!
 
     // MARK: - Application Lifecycle
 
@@ -34,8 +36,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self.ghosttyApp = app
 
         sessionManager = SessionManager.restore() ?? SessionManager()
-        windowController = MainWindowController(sessionManager: sessionManager)
+
+        agentManager = AgentManager(sessionManager: sessionManager)
+
+        agentSocketServer = AgentSocketServer()
+        agentSocketServer.onEvent = { [weak self] paneID, event, data in
+            self?.agentManager.handleHookEvent(paneID: paneID, event: event, data: data)
+        }
+        agentSocketServer.start()
+        agentManager.startPolling()
+
+        windowController = MainWindowController(sessionManager: sessionManager, agentManager: agentManager)
         windowController.splitContainerView.containerDelegate = self
+        windowController.splitContainerView.agentManager = agentManager
 
         setupMenuBar()
         windowController.showWindow(nil)
@@ -151,9 +164,41 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if FileManager.default.fileExists(atPath: zshScript) {
             setenv("AMUX_ZSH_SCRIPT", zshScript, 1)
         }
+
+        // Set socket path for agent hook communication
+        setenv("AMUX_SOCKET_PATH", AgentSocketServer.defaultPath, 1)
+
+        // Prepend agent-hooks dir to PATH for claude wrapper
+        if let resourcePath = Bundle.main.resourcePath {
+            let agentHooksDir = (resourcePath as NSString).appendingPathComponent("agent-hooks")
+            if FileManager.default.fileExists(atPath: agentHooksDir) {
+                let currentPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+                setenv("PATH", "\(agentHooksDir):\(currentPath)", 1)
+            }
+        }
+
+        // Fallback for dev builds
+        if let execURL = Bundle.main.executableURL?.deletingLastPathComponent() {
+            let candidates = [
+                execURL.appendingPathComponent("../Resources/agent-hooks").path,
+                execURL.deletingLastPathComponent().appendingPathComponent("Resources/agent-hooks").path,
+            ]
+            for hookPath in candidates {
+                if FileManager.default.fileExists(atPath: hookPath) {
+                    let currentPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
+                    if !currentPath.contains(hookPath) {
+                        setenv("PATH", "\(hookPath):\(currentPath)", 1)
+                    }
+                    break
+                }
+            }
+        }
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        agentManager.stopPolling()
+        agentSocketServer.stop()
+
         sessionManager.save()
 
         // Clean up per-pane status files

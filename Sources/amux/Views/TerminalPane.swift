@@ -230,8 +230,10 @@ class TerminalPane: NSView {
             let statusPath = "\(TerminalPane.statusDir)/\(paneID.uuidString)"
             self.statusFilePath = statusPath
             setenv("AMUX_STATUS_FILE", statusPath, 1)
+            setenv("AMUX_PANE_ID", paneID.uuidString, 1)
             tv.createSurface(app: app)
             unsetenv("AMUX_STATUS_FILE")
+            unsetenv("AMUX_PANE_ID")
             // Discover shell PID for the new tab (with retries for fish etc.)
             discoverShellPid(pidsBefore: pidsBefore, attempt: 0)
         }
@@ -455,10 +457,12 @@ class TerminalPane: NSView {
             let statusPath = "\(TerminalPane.statusDir)/\(paneID.uuidString)"
             self.statusFilePath = statusPath
             setenv("AMUX_STATUS_FILE", statusPath, 1)
+            setenv("AMUX_PANE_ID", paneID.uuidString, 1)
             for (_, tv) in terminalViewsByTab where tv.surface == nil {
                 tv.createSurface(app: app)
             }
             unsetenv("AMUX_STATUS_FILE")
+            unsetenv("AMUX_PANE_ID")
             // Discover the shell PID spawned by the new surface.
             // Use retries with increasing delays to handle shells like fish
             // that may take longer to appear in the process table.
