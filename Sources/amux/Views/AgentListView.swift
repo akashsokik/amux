@@ -607,13 +607,22 @@ private class AgentCellView: NSView {
         stateIndicator.layer?.backgroundColor = dotColor.cgColor
         attentionTintColor = agent.state.isAttentionRequired ? dotColor : nil
 
-        // Pulsing animation for attention-required states
+        // Pulsing animation for active states
         switch agent.state {
+        case .working:
+            let pulse = CABasicAnimation(keyPath: "opacity")
+            pulse.fromValue = 1.0
+            pulse.toValue = 0.3
+            pulse.duration = 1.0
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            pulse.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            stateIndicator.layer?.add(pulse, forKey: "pulse")
         case .needsInput, .needsPermission:
             let pulse = CABasicAnimation(keyPath: "opacity")
             pulse.fromValue = 1.0
             pulse.toValue = 0.3
-            pulse.duration = 0.8
+            pulse.duration = 0.5
             pulse.autoreverses = true
             pulse.repeatCount = .infinity
             stateIndicator.layer?.add(pulse, forKey: "pulse")
@@ -632,6 +641,14 @@ private class AgentCellView: NSView {
             }
             subtitleLabel.stringValue = agent.notificationMessage ?? ""
             subtitleLabel.textColor = warningColor
+        case .working:
+            if let tool = agent.currentToolName, !tool.isEmpty {
+                subtitleLabel.stringValue = tool
+            } else {
+                let dir = (agent.workingDirectory as NSString?)?.lastPathComponent ?? ""
+                subtitleLabel.stringValue = dir.isEmpty ? "working..." : dir
+            }
+            subtitleLabel.textColor = Theme.tertiaryText
         default:
             let dir = (agent.workingDirectory as NSString?)?.lastPathComponent ?? ""
             let paneShort = agent.paneID.uuidString.prefix(4)

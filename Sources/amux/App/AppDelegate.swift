@@ -27,6 +27,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Set Ghostty resources dir BEFORE init so shell integration loads for all shells
         setupGhosttyResourcesDir()
         setupAmuxShellIntegration()
+        setupClaudeCodeHooks()
 
         // Initialize the Ghostty library first
         let app = GhosttyApp()
@@ -205,6 +206,109 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSLog("[amux] Final AMUX_ZSH_SCRIPT=%@", String(cString: getenv("AMUX_ZSH_SCRIPT") ?? strdup("(not set)")))
         NSLog("[amux] Final AMUX_AGENT_HOOKS_DIR=%@", String(cString: getenv("AMUX_AGENT_HOOKS_DIR") ?? strdup("(not set)")))
         NSLog("[amux] Final AMUX_SOCKET_PATH=%@", String(cString: getenv("AMUX_SOCKET_PATH") ?? strdup("(not set)")))
+    }
+
+    /// Ensure Claude Code global hooks point to amux's agent-hook script so we receive
+    /// lifecycle events (PreToolUse, PostToolUse, Stop, Notification) from every session.
+    private func setupClaudeCodeHooks() {
+        guard let hookScript = locateAgentHookScript() else {
+            NSLog("[amux] Could not locate amux-agent-hook.sh, skipping Claude Code hooks setup")
+            return
+        }
+
+        let claudeDir = NSHomeDirectory() + "/.claude"
+        let settingsPath = claudeDir + "/settings.json"
+        let fm = FileManager.default
+
+        // Ensure ~/.claude exists
+        if !fm.fileExists(atPath: claudeDir) {
+            try? fm.createDirectory(atPath: claudeDir, withIntermediateDirectories: true)
+        }
+
+        // Read existing settings or start fresh
+        var settings: [String: Any] = [:]
+        if let data = fm.contents(atPath: settingsPath),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            settings = json
+        }
+
+        // Build the hook entry for our script
+        let hookEntry: [String: Any] = [
+            "matcher": "",
+            "hooks": [
+                [
+                    "type": "command",
+                    "command": hookScript,
+                    "timeout": 5
+                ] as [String: Any]
+            ]
+        ]
+
+        let events = ["PreToolUse", "PostToolUse", "Stop", "Notification", "PermissionRequest", "UserPromptSubmit"]
+        var hooks = settings["hooks"] as? [String: Any] ?? [:]
+        var changed = false
+
+        for event in events {
+            if let existing = hooks[event] as? [[String: Any]] {
+                // Check if our hook is already registered
+                let alreadyRegistered = existing.contains { entry in
+                    guard let entryHooks = entry["hooks"] as? [[String: Any]] else { return false }
+                    return entryHooks.contains { ($0["command"] as? String)?.contains("amux-agent-hook") == true }
+                }
+                if alreadyRegistered { continue }
+                // Append our hook alongside existing ones
+                hooks[event] = existing + [hookEntry]
+            } else {
+                hooks[event] = [hookEntry]
+            }
+            changed = true
+        }
+
+        guard changed else {
+            NSLog("[amux] Claude Code hooks already configured")
+            return
+        }
+
+        settings["hooks"] = hooks
+
+        guard let data = try? JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys]),
+              var jsonString = String(data: data, encoding: .utf8) else {
+            NSLog("[amux] Failed to serialize Claude Code settings")
+            return
+        }
+
+        // Ensure trailing newline
+        if !jsonString.hasSuffix("\n") { jsonString += "\n" }
+
+        do {
+            try jsonString.write(toFile: settingsPath, atomically: true, encoding: .utf8)
+            NSLog("[amux] Configured Claude Code hooks -> %@", hookScript)
+        } catch {
+            NSLog("[amux] Failed to write Claude Code settings: %@", error.localizedDescription)
+        }
+    }
+
+    private func locateAgentHookScript() -> String? {
+        let fm = FileManager.default
+
+        // Try app bundle first
+        if let resourcePath = Bundle.main.resourcePath {
+            let path = (resourcePath as NSString).appendingPathComponent("agent-hooks/amux-agent-hook.sh")
+            if fm.fileExists(atPath: path) { return path }
+        }
+
+        // Fallback for dev builds
+        if let execURL = Bundle.main.executableURL?.deletingLastPathComponent() {
+            let candidates = [
+                execURL.appendingPathComponent("../Resources/agent-hooks/amux-agent-hook.sh").path,
+                execURL.deletingLastPathComponent().appendingPathComponent("Resources/agent-hooks/amux-agent-hook.sh").path,
+            ]
+            for path in candidates {
+                if fm.fileExists(atPath: path) { return path }
+            }
+        }
+
+        return nil
     }
 
     func applicationWillTerminate(_ notification: Notification) {

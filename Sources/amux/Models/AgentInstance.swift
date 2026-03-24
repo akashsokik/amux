@@ -56,10 +56,12 @@ class AgentInstance: Identifiable {
     let sessionID: UUID
     let pid: pid_t
     var state: AgentState
+    var stateSetByHook: Bool = false
     let startedAt: Date
     var lastStateChange: Date
     var notificationMessage: String?
     var workingDirectory: String?
+    var currentToolName: String?
 
     init(agentType: AgentType, paneID: UUID, tabID: UUID? = nil, sessionID: UUID, pid: pid_t) {
         self.id = UUID()
@@ -73,8 +75,9 @@ class AgentInstance: Identifiable {
         self.lastStateChange = Date()
     }
 
-    func updateState(_ newState: AgentState, message: String? = nil) {
+    func updateState(_ newState: AgentState, message: String? = nil, fromHook: Bool = false) {
         state = newState
+        stateSetByHook = fromHook
         lastStateChange = Date()
         notificationMessage = message
     }

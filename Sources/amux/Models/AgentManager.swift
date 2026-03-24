@@ -88,30 +88,72 @@ class AgentManager {
     }
 
     private func applyHookEvent(_ event: String, data: [String: Any], to agent: AgentInstance) {
+        let toolName = data["toolName"] as? String
+        let toolCommand = data["toolCommand"] as? String
+
         switch event {
-        case "session-start":
-            agent.updateState(.working)
-        case "stop":
-            agent.updateState(.idle)
-        case "pre-tool-use", "post-tool-use":
-            agent.updateState(.working)
-        case "notification":
-            if let message = data["message"] as? String {
-                if message.lowercased().contains("permission") {
-                    agent.updateState(.needsPermission, message: message)
-                } else {
-                    agent.updateState(.needsInput, message: message)
+        // Claude Code PascalCase events
+        case "SessionStart":
+            agent.updateState(.working, fromHook: true)
+        case "Stop":
+            agent.updateState(.idle, fromHook: true)
+            agent.currentToolName = nil
+        case "PreToolUse":
+            agent.updateState(.working, fromHook: true)
+            // Track what tool is being used for richer UI context
+            if let tool = toolName {
+                agent.currentToolName = tool
+                if tool == "Bash", let cmd = toolCommand, !cmd.isEmpty {
+                    let short = String(cmd.prefix(60))
+                    agent.currentToolName = "Bash: \(short)"
                 }
             }
+        case "PostToolUse":
+            agent.updateState(.working, fromHook: true)
+            agent.currentToolName = nil
+        case "Notification":
+            if let message = data["message"] as? String, !message.isEmpty {
+                if message.lowercased().contains("permission") {
+                    agent.updateState(.needsPermission, message: message, fromHook: true)
+                } else {
+                    agent.updateState(.needsInput, message: message, fromHook: true)
+                }
+            }
+        case "PermissionRequest":
+            let tool = toolName ?? "tool"
+            agent.updateState(.needsPermission, message: "Allow \(tool)?", fromHook: true)
+            agent.currentToolName = nil
+        case "UserPromptSubmit":
+            // User submitted input, agent is about to start working
+            agent.updateState(.working, fromHook: true)
+            agent.currentToolName = nil
+        // Codex events (lowercase/camelCase)
+        case "AfterAgent", "stop":
+            agent.updateState(.idle, fromHook: true)
+            agent.currentToolName = nil
+        case "AfterToolUse", "pre_tool_use", "post_tool_use":
+            agent.updateState(.working, fromHook: true)
+        case "session-start":
+            agent.updateState(.working, fromHook: true)
         default:
             break
         }
     }
 
+    /// If a hook set .working but no follow-up hook arrived within this window,
+    /// fall back to process-based inference. Prevents stale "working" if Stop hook fails.
+    private static let hookStalenessInterval: TimeInterval = 10
+
     private func refreshProcessDerivedState(for agent: AgentInstance, agentPid: pid_t) {
-        // Hook-driven attention states are more precise; do not clobber them
-        // with coarse process-tree inference.
-        if agent.state.isAttentionRequired { return }
+        // Hook-driven states are more precise than coarse process-tree inference.
+        // But if the last hook is stale (e.g. Stop event was lost), fall back.
+        if agent.stateSetByHook {
+            let age = Date().timeIntervalSince(agent.lastStateChange)
+            let isStale = age > Self.hookStalenessInterval && agent.state == .working
+            if !isStale { return }
+            // Hook state is stale -- clear the flag and fall through to inference
+            agent.stateSetByHook = false
+        }
 
         let inferredState = inferState(agentPid: agentPid)
         if agent.state != inferredState {

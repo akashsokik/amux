@@ -108,6 +108,43 @@ if [ -d "$TERMINFO_SRC" ]; then
     cp -R "$TERMINFO_SRC" "$RESOURCES_DIR/"
 fi
 
+# Inject Claude Code hooks into global settings so amux receives agent lifecycle events
+CLAUDE_SETTINGS="$HOME/.claude/settings.json"
+HOOK_SCRIPT="$AGENT_HOOKS_DST/amux-agent-hook.sh"
+if [ -f "$HOOK_SCRIPT" ]; then
+    mkdir -p "$HOME/.claude"
+    if [ -f "$CLAUDE_SETTINGS" ]; then
+        # Check if hooks already configured
+        if ! grep -q "amux-agent-hook" "$CLAUDE_SETTINGS" 2>/dev/null; then
+            python3 -c "
+import json, sys
+with open('$CLAUDE_SETTINGS') as f:
+    settings = json.load(f)
+hook_entry = {'matcher': '', 'hooks': [{'type': 'command', 'command': '$HOOK_SCRIPT', 'timeout': 5}]}
+hooks = settings.get('hooks', {})
+for event in ['PreToolUse', 'PostToolUse', 'Stop', 'Notification', 'PermissionRequest', 'UserPromptSubmit']:
+    existing = hooks.get(event, [])
+    existing.append(hook_entry)
+    hooks[event] = existing
+settings['hooks'] = hooks
+with open('$CLAUDE_SETTINGS', 'w') as f:
+    json.dump(settings, f, indent=2)
+    f.write('\n')
+" && echo "Configured Claude Code hooks -> $HOOK_SCRIPT"
+        fi
+    else
+        # Create settings.json with just hooks
+        python3 -c "
+import json
+hook_entry = {'matcher': '', 'hooks': [{'type': 'command', 'command': '$HOOK_SCRIPT', 'timeout': 5}]}
+settings = {'hooks': {event: [hook_entry] for event in ['PreToolUse', 'PostToolUse', 'Stop', 'Notification', 'PermissionRequest', 'UserPromptSubmit']}}
+with open('$CLAUDE_SETTINGS', 'w') as f:
+    json.dump(settings, f, indent=2)
+    f.write('\n')
+" && echo "Created Claude Code settings with hooks -> $HOOK_SCRIPT"
+    fi
+fi
+
 echo "Built amux.app"
 
 # Launch (pass current PATH so Homebrew binaries like starship are found)
