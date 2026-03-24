@@ -1,0 +1,58 @@
+#!/bin/bash
+# amux wrapper for claude -- injects hooks when running inside amux
+
+# If not inside amux (no AMUX_PANE_ID), find and exec the real claude
+if [ -z "$AMUX_PANE_ID" ] || [ -z "$AMUX_SOCKET_PATH" ]; then
+    SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+    REAL_CLAUDE=""
+    IFS=: read -ra PATH_DIRS <<< "$PATH"
+    for dir in "${PATH_DIRS[@]}"; do
+        resolved="$(cd "$dir" 2>/dev/null && pwd)"
+        [ "$resolved" = "$SELF_DIR" ] && continue
+        if [ -x "$dir/claude" ]; then
+            REAL_CLAUDE="$dir/claude"
+            break
+        fi
+    done
+    if [ -z "$REAL_CLAUDE" ]; then
+        echo "amux: could not find real claude binary" >&2
+        exit 1
+    fi
+    exec "$REAL_CLAUDE" "$@"
+fi
+
+# Inside amux -- find real claude (same PATH scan skipping self)
+SELF_DIR="$(cd "$(dirname "$0")" && pwd)"
+REAL_CLAUDE=""
+IFS=: read -ra PATH_DIRS <<< "$PATH"
+for dir in "${PATH_DIRS[@]}"; do
+    resolved="$(cd "$dir" 2>/dev/null && pwd)"
+    [ "$resolved" = "$SELF_DIR" ] && continue
+    if [ -x "$dir/claude" ]; then
+        REAL_CLAUDE="$dir/claude"
+        break
+    fi
+done
+if [ -z "$REAL_CLAUDE" ]; then
+    echo "amux: could not find real claude binary" >&2
+    exit 1
+fi
+
+# Hook helper script (sibling)
+HOOK_SCRIPT="$SELF_DIR/amux-agent-hook.sh"
+
+# Build hook settings JSON for Claude Code --settings injection
+HOOK_SETTINGS=$(cat <<ENDJSON
+{
+  "hooks": {
+    "SessionStart": [{"type": "command", "command": "$HOOK_SCRIPT session-start"}],
+    "Stop": [{"type": "command", "command": "$HOOK_SCRIPT stop"}],
+    "Notification": [{"type": "command", "command": "$HOOK_SCRIPT notification"}],
+    "PreToolUse": [{"type": "command", "command": "$HOOK_SCRIPT pre-tool-use"}],
+    "PostToolUse": [{"type": "command", "command": "$HOOK_SCRIPT post-tool-use"}]
+  }
+}
+ENDJSON
+)
+
+exec "$REAL_CLAUDE" --settings "$HOOK_SETTINGS" "$@"
