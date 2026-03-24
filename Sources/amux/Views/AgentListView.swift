@@ -571,6 +571,20 @@ private class AgentCellView: NSView {
         stateDot.layer?.backgroundColor = dotColor.cgColor
         attentionTintColor = agent.state.isAttentionRequired ? dotColor : nil
 
+        // Pulsing animation for attention-required states
+        switch agent.state {
+        case .needsInput, .needsPermission:
+            let pulse = CABasicAnimation(keyPath: "opacity")
+            pulse.fromValue = 1.0
+            pulse.toValue = 0.3
+            pulse.duration = 0.8
+            pulse.autoreverses = true
+            pulse.repeatCount = .infinity
+            stateDot.layer?.add(pulse, forKey: "pulse")
+        default:
+            stateDot.layer?.removeAnimation(forKey: "pulse")
+        }
+
         // Subtitle
         switch agent.state {
         case .needsInput, .needsPermission:
