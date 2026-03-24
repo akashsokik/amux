@@ -1,4 +1,6 @@
 import AppKit
+import Neon
+import SwiftTreeSitter
 
 // MARK: - EditorSidebarView Delegate
 
@@ -1389,7 +1391,7 @@ class EditorDropdownButton: NSView {
 class EditorTextContentView: NSView, NSTextViewDelegate {
     private var scrollView: NSScrollView!
     private var textView: NSTextView!
-    private var highlighter: SyntaxHighlighter!
+    private var highlighter: TextViewHighlighter?
     private var isBindingText = false
     private var currentFileExtension = ""
 
@@ -1456,9 +1458,6 @@ class EditorTextContentView: NSView, NSTextViewDelegate {
         )
 
         scrollView.documentView = textView
-        highlighter = SyntaxHighlighter(
-            font: NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
-        )
 
         NSLayoutConstraint.activate([
             scrollView.topAnchor.constraint(equalTo: topAnchor),
@@ -1480,7 +1479,7 @@ class EditorTextContentView: NSView, NSTextViewDelegate {
         textView.isSelectable = true
         textView.textColor = isEditable ? Theme.primaryText : Theme.secondaryText
         isBindingText = false
-        applyHighlighting()
+        configureHighlighter()
     }
 
     func focusEditor() {
@@ -1502,17 +1501,82 @@ class EditorTextContentView: NSView, NSTextViewDelegate {
         } else {
             textView.textColor = Theme.secondaryText
         }
-        applyHighlighting()
+        configureHighlighter()
     }
 
     func textDidChange(_ notification: Notification) {
         guard !isBindingText else { return }
         onTextChange?(textView.string)
-        applyHighlighting()
     }
 
-    private func applyHighlighting() {
-        guard let textStorage = textView.textStorage else { return }
-        highlighter.highlight(textStorage: textStorage, fileExtension: currentFileExtension)
+    private func configureHighlighter() {
+        // Drop the old highlighter (resets text storage delegate, etc.)
+        highlighter = nil
+
+        guard let config = TreeSitterManager.shared.configuration(for: currentFileExtension) else {
+            // No grammar for this file type -- leave text unstyled
+            return
+        }
+
+        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+
+        // Set typing attributes so new text gets a sensible default style
+        textView.typingAttributes = [
+            .foregroundColor: Theme.primaryText,
+            .font: font,
+        ]
+
+        let highlighterConfig = TextViewHighlighter.Configuration(
+            languageConfiguration: config,
+            attributeProvider: { token in
+                Self.attributes(for: token.name)
+            },
+            languageProvider: { name in
+                // We don't support embedded languages yet
+                nil
+            },
+            locationTransformer: { _ in nil }
+        )
+
+        do {
+            highlighter = try TextViewHighlighter(
+                textView: textView,
+                configuration: highlighterConfig
+            )
+            highlighter?.observeEnclosingScrollView()
+        } catch {
+            // If tree-sitter setup fails, fall back to plain text
+            highlighter = nil
+        }
+    }
+
+    private static func attributes(for tokenName: String) -> [NSAttributedString.Key: Any] {
+        let font = NSFont.monospacedSystemFont(ofSize: 13, weight: .regular)
+        let color: NSColor
+
+        if tokenName.hasPrefix("keyword") {
+            color = Theme.primary.blended(withFraction: 0.25, of: Theme.primaryText) ?? Theme.primary
+        } else if tokenName.hasPrefix("string") {
+            color = Theme.secondary.blended(withFraction: 0.2, of: Theme.primaryText) ?? Theme.secondary
+        } else if tokenName.hasPrefix("comment") {
+            color = Theme.tertiaryText
+        } else if tokenName.hasPrefix("number") || tokenName.hasPrefix("float") {
+            color = Theme.primaryContainer.blended(withFraction: 0.35, of: Theme.primaryText) ?? Theme.primaryContainer
+        } else if tokenName.hasPrefix("type") {
+            color = Theme.onSurfaceVariant
+        } else if tokenName.hasPrefix("function") || tokenName.hasPrefix("method") {
+            color = Theme.primary
+        } else if tokenName.hasPrefix("operator") || tokenName.hasPrefix("punctuation") {
+            color = Theme.secondaryText
+        } else if tokenName.hasPrefix("constant") {
+            color = Theme.secondary
+        } else {
+            color = Theme.primaryText
+        }
+
+        return [
+            .foregroundColor: color,
+            .font: font,
+        ]
     }
 }
