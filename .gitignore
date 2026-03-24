@@ -17,3 +17,6 @@ DerivedData/
 
 # Full ghostty clone (only ghostty-dist is tracked)
 vendor/ghostty/
+
+# Worktrees
+.worktrees/
