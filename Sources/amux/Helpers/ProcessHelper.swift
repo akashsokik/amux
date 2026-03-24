@@ -54,9 +54,9 @@ enum ProcessHelper {
         return String(cString: buffer)
     }
 
-    /// Get the command name (argv[0]) of a process via KERN_PROCARGS2.
-    /// This returns the name the process was invoked as (e.g. "claude" for Claude Code),
-    /// which may differ from proc_name() which returns the binary name (e.g. "node").
+    /// Get the command name of a process by scanning KERN_PROCARGS2.
+    /// Checks argv[0] last-path-component, then scans all args for known names.
+    /// More robust than just argv[0] since different install methods vary.
     static func commandName(of pid: pid_t) -> String? {
         var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, Int32(pid)]
         var size: Int = 0
@@ -73,10 +73,39 @@ enum ProcessHelper {
         while idx < size && buf[idx] == 0 { idx += 1 }
         guard idx < size else { return nil }
 
-        // Read argv[0]
-        let argv0 = String(cString: Array(buf[idx...]))
-        // Return just the last path component
-        return URL(fileURLWithPath: argv0).lastPathComponent
+        // Collect all argv entries (null-separated strings until we hit env vars)
+        var args: [String] = []
+        while idx < size && args.count < 10 {
+            let arg = String(cString: Array(buf[idx...]))
+            if arg.isEmpty { break }
+            args.append(arg)
+            idx += arg.utf8.count + 1
+            // Skip padding nulls
+            while idx < size && buf[idx] == 0 { idx += 1 }
+        }
+
+        guard !args.isEmpty else { return nil }
+
+        // Check argv[0] last path component first (most common case)
+        let argv0Name = URL(fileURLWithPath: args[0]).lastPathComponent
+        if argv0Name == "claude" || argv0Name == "codex" {
+            return argv0Name
+        }
+
+        // Scan all args for known agent identifiers in paths
+        for arg in args {
+            let lower = arg.lowercased()
+            if lower.contains("/bin/claude") || lower.contains("claude-code") ||
+               lower.hasSuffix("/claude") {
+                return "claude"
+            }
+            if lower.contains("/bin/codex") || lower.contains("@openai/codex") ||
+               lower.hasSuffix("/codex") {
+                return "codex"
+            }
+        }
+
+        return argv0Name
     }
 
     /// Get the foreground process of a shell by walking the process tree to the deepest descendant.

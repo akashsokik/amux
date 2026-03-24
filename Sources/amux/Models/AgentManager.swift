@@ -119,26 +119,38 @@ class AgentManager {
     }
 
     private func findAgentProcess(under shellPid: pid_t) -> (pid_t, AgentType)? {
-        var stack: [pid_t] = ProcessHelper.childPidsOf(shellPid)
-        var visited: Set<pid_t> = [shellPid]
+        let isRuntime = { (name: String?) -> Bool in
+            guard let n = name else { return false }
+            return n == "node" || n == "bun" || n == "deno"
+        }
 
-        while let current = stack.popLast() {
-            guard !visited.contains(current) else { continue }
-            visited.insert(current)
-
-            // Check proc_name first (fast), then argv[0] via KERN_PROCARGS2
-            // Node.js CLI tools like claude/codex show "node" for proc_name
-            // but "claude"/"codex" for argv[0]
-            let procName = ProcessHelper.name(of: current)
+        // Only check direct children and one level deep -- agents are
+        // direct children of the shell (or one hop via env/npx)
+        let directChildren = ProcessHelper.childPidsOf(shellPid)
+        for child in directChildren {
+            let procName = ProcessHelper.name(of: child)
+            // Direct match (native binary or renamed process)
             if let name = procName, let agentType = Self.knownAgents[name] {
-                return (current, agentType)
+                return (child, agentType)
             }
-            if procName == "node" || procName == "bun" || procName == "deno",
-               let cmdName = ProcessHelper.commandName(of: current),
+            // Runtime process -- scan args for agent identity
+            if isRuntime(procName),
+               let cmdName = ProcessHelper.commandName(of: child),
                let agentType = Self.knownAgents[cmdName] {
-                return (current, agentType)
+                return (child, agentType)
             }
-            stack.append(contentsOf: ProcessHelper.childPidsOf(current))
+            // One level deeper (e.g. env -> node, npx -> node)
+            for grandchild in ProcessHelper.childPidsOf(child) {
+                let gcName = ProcessHelper.name(of: grandchild)
+                if let name = gcName, let agentType = Self.knownAgents[name] {
+                    return (grandchild, agentType)
+                }
+                if isRuntime(gcName),
+                   let cmdName = ProcessHelper.commandName(of: grandchild),
+                   let agentType = Self.knownAgents[cmdName] {
+                    return (grandchild, agentType)
+                }
+            }
         }
         return nil
     }
