@@ -168,27 +168,24 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Set socket path for agent hook communication
         setenv("AMUX_SOCKET_PATH", AgentSocketServer.defaultPath, 1)
 
-        // Prepend agent-hooks dir to PATH for claude wrapper
+        // Set AMUX_AGENT_HOOKS_DIR so shell integration scripts can prepend to PATH.
+        // We can't set PATH here because login resets it from /etc/paths.
         if let resourcePath = Bundle.main.resourcePath {
             let agentHooksDir = (resourcePath as NSString).appendingPathComponent("agent-hooks")
             if FileManager.default.fileExists(atPath: agentHooksDir) {
-                let currentPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
-                setenv("PATH", "\(agentHooksDir):\(currentPath)", 1)
+                setenv("AMUX_AGENT_HOOKS_DIR", agentHooksDir, 1)
             }
         }
-
         // Fallback for dev builds
-        if let execURL = Bundle.main.executableURL?.deletingLastPathComponent() {
+        if ProcessInfo.processInfo.environment["AMUX_AGENT_HOOKS_DIR"] == nil,
+           let execURL = Bundle.main.executableURL?.deletingLastPathComponent() {
             let candidates = [
                 execURL.appendingPathComponent("../Resources/agent-hooks").path,
                 execURL.deletingLastPathComponent().appendingPathComponent("Resources/agent-hooks").path,
             ]
             for hookPath in candidates {
                 if FileManager.default.fileExists(atPath: hookPath) {
-                    let currentPath = ProcessInfo.processInfo.environment["PATH"] ?? ""
-                    if !currentPath.contains(hookPath) {
-                        setenv("PATH", "\(hookPath):\(currentPath)", 1)
-                    }
+                    setenv("AMUX_AGENT_HOOKS_DIR", hookPath, 1)
                     break
                 }
             }
