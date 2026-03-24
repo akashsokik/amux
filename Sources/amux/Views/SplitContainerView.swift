@@ -350,25 +350,29 @@ class SplitContainerView: NSView {
     }
 
     /// Iterate all active panes and feed their shell PIDs to the agent manager.
+    /// Uses atomic replacement so closed panes are automatically cleaned up.
     func updateAgentManagerMappings() {
         guard let agentManager = agentManager,
               let sessionID = currentSessionID else { return }
+
+        var mappings: [(paneID: UUID, shellPid: pid_t, sessionID: UUID)] = []
+
         for (paneID, pane) in paneViews {
             if let pid = pane.shellProcessID {
-                agentManager.paneShellPids[paneID] = pid
-                agentManager.paneSessionMap[paneID] = sessionID
+                mappings.append((paneID: paneID, shellPid: pid, sessionID: sessionID))
             }
         }
-        // Also update cached (inactive) session panes
+        // Also include cached (inactive) session panes
         for (cachedSessionID, cachedPanes) in sessionPaneCache {
             guard cachedSessionID != currentSessionID else { continue }
             for (paneID, pane) in cachedPanes {
                 if let pid = pane.shellProcessID {
-                    agentManager.paneShellPids[paneID] = pid
-                    agentManager.paneSessionMap[paneID] = cachedSessionID
+                    mappings.append((paneID: paneID, shellPid: pid, sessionID: cachedSessionID))
                 }
             }
         }
+
+        agentManager.replaceAllPaneMappings(mappings)
     }
 
     // MARK: - Dimension for divider drag
