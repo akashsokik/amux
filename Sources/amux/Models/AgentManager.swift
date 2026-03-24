@@ -96,8 +96,13 @@ class AgentManager {
         case "SessionStart":
             agent.updateState(.working, fromHook: true)
         case "Stop":
-            agent.updateState(.idle, fromHook: true)
-            agent.currentToolName = nil
+            // Don't clobber attention states -- Stop fires after Notification/PermissionRequest
+            // and would erase the "needs input" indicator. Only user action (PreToolUse,
+            // UserPromptSubmit) should clear attention states.
+            if !agent.state.isAttentionRequired {
+                agent.updateState(.idle, fromHook: true)
+                agent.currentToolName = nil
+            }
         case "PreToolUse":
             agent.updateState(.working, fromHook: true)
             // Track what tool is being used for richer UI context
@@ -129,8 +134,10 @@ class AgentManager {
             agent.currentToolName = nil
         // Codex events (lowercase/camelCase)
         case "AfterAgent", "stop":
-            agent.updateState(.idle, fromHook: true)
-            agent.currentToolName = nil
+            if !agent.state.isAttentionRequired {
+                agent.updateState(.idle, fromHook: true)
+                agent.currentToolName = nil
+            }
         case "AfterToolUse", "pre_tool_use", "post_tool_use":
             agent.updateState(.working, fromHook: true)
         case "session-start":
