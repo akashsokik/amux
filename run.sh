@@ -76,6 +76,15 @@ if [ -d "$AMUX_SHELL_SRC" ]; then
     cp -R "$AMUX_SHELL_SRC"/* "$AMUX_SHELL_INTEG/"
 fi
 
+# Copy agent hook scripts (claude wrapper + hook helper)
+AGENT_HOOKS_SRC="$SCRIPT_DIR/Resources/agent-hooks"
+AGENT_HOOKS_DST="$RESOURCES_DIR/agent-hooks"
+if [ -d "$AGENT_HOOKS_SRC" ]; then
+    mkdir -p "$AGENT_HOOKS_DST"
+    cp -R "$AGENT_HOOKS_SRC"/* "$AGENT_HOOKS_DST/"
+    chmod +x "$AGENT_HOOKS_DST"/*
+fi
+
 # Copy terminfo sentinel (helps Ghostty auto-detect resources dir)
 TERMINFO_SRC="$SCRIPT_DIR/vendor/ghostty-dist/terminfo"
 if [ -d "$TERMINFO_SRC" ]; then
