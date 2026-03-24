@@ -26,6 +26,9 @@ class SidebarView: NSView {
     private var headerLabel: NSTextField!
     private var separatorLine: NSView!
 
+    // Glass background (vibrancy)
+    private var glassView: GlassBackgroundView?
+
     // Icon tab bar
     private var iconBar: NSView!
     private var sessionsButton: DimIconButton!
@@ -61,7 +64,7 @@ class SidebarView: NSView {
     }
 
     @objc private func themeDidChange() {
-        layer?.backgroundColor = Theme.sidebarBg.cgColor
+        applyGlassOrSolid()
         headerLabel.textColor = Theme.tertiaryText
         separatorLine.layer?.backgroundColor = Theme.outlineVariant.cgColor
         sessionsButton.isActiveState = mode == .sessions
@@ -78,6 +81,40 @@ class SidebarView: NSView {
 
     // MARK: - Setup
 
+    /// Temporarily hide/show the glass backdrop (used during sidebar slide animations
+    /// to prevent the NSVisualEffectView blur from creating a trailing shadow artifact).
+    func setGlassHidden(_ hidden: Bool) {
+        glassView?.isHidden = hidden
+        if hidden {
+            layer?.backgroundColor = Theme.sidebarBg.cgColor
+        } else {
+            applyGlassOrSolid()
+        }
+    }
+
+    private func applyGlassOrSolid() {
+        if Theme.useVibrancy {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            if glassView == nil {
+                let gv = GlassBackgroundView()
+                gv.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(gv, positioned: .below, relativeTo: subviews.first)
+                NSLayoutConstraint.activate([
+                    gv.topAnchor.constraint(equalTo: topAnchor),
+                    gv.bottomAnchor.constraint(equalTo: bottomAnchor),
+                    gv.leadingAnchor.constraint(equalTo: leadingAnchor),
+                    gv.trailingAnchor.constraint(equalTo: trailingAnchor),
+                ])
+                glassView = gv
+            }
+            glassView?.isHidden = false
+            glassView?.setTint(Theme.sidebarBg)
+        } else {
+            layer?.backgroundColor = Theme.sidebarBg.cgColor
+            glassView?.isHidden = true
+        }
+    }
+
     private func setupUI() {
         wantsLayer = true
         layer?.backgroundColor = Theme.sidebarBg.cgColor
@@ -90,6 +127,7 @@ class SidebarView: NSView {
         setupGitStatusView()
         setupSeparatorLine()
         setupConstraints()
+        applyGlassOrSolid()
     }
 
     private func setupIconBar() {

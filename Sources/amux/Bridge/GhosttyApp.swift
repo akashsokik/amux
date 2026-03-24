@@ -198,6 +198,10 @@ final class GhosttyApp {
 
         var overrideConfig = "background = \(bgHex)\n"
 
+        if Theme.useVibrancy {
+            overrideConfig += "background-opacity = 0.75\n"
+        }
+
         if Theme.isLight {
             let fg = Theme.primaryText
             fg.usingColorSpace(.sRGB)?.getRed(&r, green: &g, blue: &b, alpha: &a)

@@ -1,5 +1,6 @@
 import AppKit
 import CGhostty
+import UserNotifications
 
 class AppDelegate: NSObject, NSApplicationDelegate {
     private var sessionManager: SessionManager!
@@ -11,6 +12,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         // Start new terminals in home directory, not wherever the app was launched from
         FileManager.default.changeCurrentDirectoryPath(NSHomeDirectory())
+
+        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
 
         Theme.registerFonts()
         // Initialize ThemeManager before GhosttyApp so colors are ready
@@ -330,12 +333,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let viewMenuItem = NSMenuItem()
         let viewMenu = NSMenu(title: "View")
 
-        let toggleSidebarItem = NSMenuItem(title: "Toggle Sidebar", action: #selector(toggleSidebar(_:)), keyEquivalent: "\\")
+        let toggleSidebarItem = NSMenuItem(title: "Toggle Sidebar", action: #selector(toggleSidebar(_:)), keyEquivalent: "b")
         toggleSidebarItem.target = self
         viewMenu.addItem(toggleSidebarItem)
 
-        let toggleEditorItem = NSMenuItem(title: "Toggle Editor Sidebar", action: #selector(toggleEditorSidebar(_:)), keyEquivalent: "E")
-        toggleEditorItem.keyEquivalentModifierMask = [.command, .shift]
+        let toggleEditorItem = NSMenuItem(title: "Toggle Editor Sidebar", action: #selector(toggleEditorSidebar(_:)), keyEquivalent: "\\")
+        toggleEditorItem.keyEquivalentModifierMask = [.command]
         toggleEditorItem.target = self
         viewMenu.addItem(toggleEditorItem)
 
@@ -370,6 +373,17 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let findItem = NSMenuItem(title: "Find in Terminal", action: #selector(findInTerminal(_:)), keyEquivalent: "f")
         findItem.target = self
         viewMenu.addItem(findItem)
+
+        viewMenu.addItem(NSMenuItem.separator())
+
+        let glassItem = NSMenuItem(
+            title: "Glassmorphism",
+            action: #selector(toggleGlassmorphism(_:)),
+            keyEquivalent: ""
+        )
+        glassItem.target = self
+        glassItem.state = ThemeManager.shared.glassmorphismEnabled ? .on : .off
+        viewMenu.addItem(glassItem)
 
         viewMenuItem.submenu = viewMenu
         mainMenu.addItem(viewMenuItem)
@@ -421,12 +435,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             PaletteCommand(name: "Navigate Down", shortcut: "Cmd+Shift+Down", icon: "arrow.down") { [weak self] in self?.navigateDown(nil) },
             PaletteCommand(name: "Navigate Left", shortcut: "Cmd+Shift+Left", icon: "arrow.left") { [weak self] in self?.navigateLeft(nil) },
             PaletteCommand(name: "Navigate Right", shortcut: "Cmd+Shift+Right", icon: "arrow.right") { [weak self] in self?.navigateRight(nil) },
-            PaletteCommand(name: "Toggle Sidebar", shortcut: "Cmd+\\", icon: "sidebar.left") { [weak self] in self?.toggleSidebar(nil) },
-            PaletteCommand(name: "Toggle Editor Sidebar", shortcut: "Cmd+Shift+E", icon: "sidebar.right") { [weak self] in self?.toggleEditorSidebar(nil) },
+            PaletteCommand(name: "Toggle Sidebar", shortcut: "Cmd+B", icon: "sidebar.left") { [weak self] in self?.toggleSidebar(nil) },
+            PaletteCommand(name: "Toggle Editor Sidebar", shortcut: "Cmd+\\", icon: "sidebar.right") { [weak self] in self?.toggleEditorSidebar(nil) },
             PaletteCommand(name: "Increase Font Size", shortcut: "Cmd++", icon: "plus.magnifyingglass") { [weak self] in self?.increaseFontSize(nil) },
             PaletteCommand(name: "Decrease Font Size", shortcut: "Cmd+-", icon: "minus.magnifyingglass") { [weak self] in self?.decreaseFontSize(nil) },
             PaletteCommand(name: "Reset Font Size", shortcut: "Cmd+0", icon: "1.magnifyingglass") { [weak self] in self?.resetFontSize(nil) },
             PaletteCommand(name: "Find in Terminal", shortcut: "Cmd+F", icon: "magnifyingglass") { [weak self] in self?.findInTerminal(nil) },
+        ] + [
+            PaletteCommand(
+                name: "Toggle Glassmorphism",
+                shortcut: "",
+                icon: ThemeManager.shared.glassmorphismEnabled ? "checkmark.circle.fill" : "circle"
+            ) { [weak self] in
+                self?.toggleGlassmorphism(nil)
+            },
         ] + ThemeManager.shared.available.map { [weak self] theme in
             PaletteCommand(name: "Theme: \(theme.name)", shortcut: "", icon: "paintpalette") {
                 self?.applyThemeAndUpdateMenu(theme)
@@ -448,6 +470,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let themeID = sender.representedObject as? String,
               let theme = ThemeManager.shared.available.first(where: { $0.id == themeID }) else { return }
         applyThemeAndUpdateMenu(theme)
+    }
+
+    @objc private func toggleGlassmorphism(_ sender: Any?) {
+        ThemeManager.shared.toggleGlassmorphism()
+        ghosttyApp?.updateTerminalBackground()
+        // Update checkmark in View menu
+        if let mainMenu = NSApp.mainMenu {
+            for menuItem in mainMenu.items {
+                guard menuItem.submenu?.title == "View" else { continue }
+                for item in menuItem.submenu?.items ?? [] where item.title == "Glassmorphism" {
+                    item.state = ThemeManager.shared.glassmorphismEnabled ? .on : .off
+                }
+            }
+        }
     }
 
     private func applyThemeAndUpdateMenu(_ theme: ThemeDefinition) {
@@ -874,11 +910,12 @@ extension AppDelegate: GhosttyAppDelegate {
             body = "\"\(title)\" failed (exit \(exitCode)) after \(duration)s"
         }
 
-        let notification = NSUserNotification()
-        notification.title = "Command Finished"
-        notification.informativeText = body
-        notification.soundName = NSUserNotificationDefaultSoundName
-        NSUserNotificationCenter.default.deliver(notification)
+        let content = UNMutableNotificationContent()
+        content.title = "Command Finished"
+        content.body = body
+        content.sound = .default
+        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(request)
     }
 
     func ghosttyApp(_ app: GhosttyApp, surfaceDidRequestSearch surfaceView: GhosttyTerminalView, needle: String?) {

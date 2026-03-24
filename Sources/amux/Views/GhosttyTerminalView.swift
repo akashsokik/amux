@@ -16,6 +16,10 @@ protocol GhosttyTerminalViewDelegate: AnyObject {
 class GhosttyTerminalView: NSView, NSTextInputClient {
     let paneID: UUID
 
+    /// When true, layout defers ghostty_surface_set_size calls to avoid flickering
+    /// during animated sidebar toggles. Set by MainWindowController before/after animation.
+    static var deferSurfaceResize = false
+
     /// The underlying ghostty surface handle. nil means the surface failed to create.
     private(set) var surface: ghostty_surface_t?
 
@@ -173,6 +177,10 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         focusBorderLayer?.frame = bounds
 
         guard let surface = surface else { return }
+
+        // Skip surface resize during animated sidebar toggles to avoid flickering.
+        // The final size is applied once the animation completes.
+        if GhosttyTerminalView.deferSurfaceResize { return }
 
         // Update the surface size with the framebuffer (scaled) size
         let scaledSize = self.convertToBacking(bounds.size)

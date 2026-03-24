@@ -15,6 +15,7 @@ class EditorSidebarView: NSView {
     private var tabs: [EditorTab] = []
     private var activeTabID: UUID?
 
+    private var glassView: GlassBackgroundView?
     private var separatorLine: NSView!
     private var tabStripView: EditorTabStripView!
     private var headerView: EditorHeaderView!
@@ -57,8 +58,40 @@ class EditorSidebarView: NSView {
         return tabs.first(where: { $0.id == activeTabID })
     }
 
+    func setGlassHidden(_ hidden: Bool) {
+        glassView?.isHidden = hidden
+        if hidden {
+            layer?.backgroundColor = Theme.sidebarBg.cgColor
+        } else {
+            applyGlassOrSolid()
+        }
+    }
+
+    private func applyGlassOrSolid() {
+        if Theme.useVibrancy {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            if glassView == nil {
+                let gv = GlassBackgroundView()
+                gv.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(gv, positioned: .below, relativeTo: subviews.first)
+                NSLayoutConstraint.activate([
+                    gv.topAnchor.constraint(equalTo: topAnchor),
+                    gv.bottomAnchor.constraint(equalTo: bottomAnchor),
+                    gv.leadingAnchor.constraint(equalTo: leadingAnchor),
+                    gv.trailingAnchor.constraint(equalTo: trailingAnchor),
+                ])
+                glassView = gv
+            }
+            glassView?.isHidden = false
+            glassView?.setTint(Theme.sidebarBg)
+        } else {
+            layer?.backgroundColor = Theme.sidebarBg.cgColor
+            glassView?.isHidden = true
+        }
+    }
+
     @objc private func themeDidChange() {
-        layer?.backgroundColor = Theme.sidebarBg.cgColor
+        applyGlassOrSolid()
         separatorLine.layer?.backgroundColor = Theme.outlineVariant.cgColor
         contentContainer.layer?.backgroundColor = editorSurfaceColor.cgColor
         placeholderLabel.textColor = Theme.tertiaryText
@@ -73,6 +106,7 @@ class EditorSidebarView: NSView {
         layer?.backgroundColor = Theme.sidebarBg.cgColor
 
         separatorLine = NSView()
+
         separatorLine.translatesAutoresizingMaskIntoConstraints = false
         separatorLine.wantsLayer = true
         separatorLine.layer?.backgroundColor = Theme.outlineVariant.cgColor
@@ -177,6 +211,7 @@ class EditorSidebarView: NSView {
         ])
 
         renderState()
+        applyGlassOrSolid()
     }
 
     // MARK: - Public API
@@ -441,6 +476,7 @@ class EditorTabStripView: NSView {
 
     weak var delegate: EditorTabStripViewDelegate?
 
+    private var glassView: GlassBackgroundView?
     private var scrollView: NSScrollView!
     private var tabContainer: NSView!
     private var tabItemViews: [EditorTabItemView] = []
@@ -497,8 +533,31 @@ class EditorTabStripView: NSView {
         layoutTabItems()
     }
 
+    private func applyGlassOrSolid() {
+        if Theme.useVibrancy {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            if glassView == nil {
+                let gv = GlassBackgroundView()
+                gv.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(gv, positioned: .below, relativeTo: subviews.first)
+                NSLayoutConstraint.activate([
+                    gv.topAnchor.constraint(equalTo: topAnchor),
+                    gv.bottomAnchor.constraint(equalTo: bottomAnchor),
+                    gv.leadingAnchor.constraint(equalTo: leadingAnchor),
+                    gv.trailingAnchor.constraint(equalTo: trailingAnchor),
+                ])
+                glassView = gv
+            }
+            glassView?.isHidden = false
+            glassView?.setTint(Theme.surfaceContainerLow)
+        } else {
+            layer?.backgroundColor = Theme.surfaceContainerLow.cgColor
+            glassView?.isHidden = true
+        }
+    }
+
     func refreshTheme() {
-        layer?.backgroundColor = Theme.surfaceContainerLow.cgColor
+        applyGlassOrSolid()
         for item in tabItemViews {
             item.refreshTheme()
         }
@@ -542,6 +601,7 @@ extension EditorTabStripView: EditorTabItemViewDelegate {
 // MARK: - EditorHeaderView
 
 class EditorHeaderView: NSView {
+    private var glassView: GlassBackgroundView?
     private var pathLabel: NSTextField!
     private var expandButton: DimIconButton!
     private var saveButton: DimIconButton!
@@ -711,8 +771,31 @@ class EditorHeaderView: NSView {
         closeButton.isHidden = true
     }
 
+    private func applyGlassOrSolid() {
+        if Theme.useVibrancy {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            if glassView == nil {
+                let gv = GlassBackgroundView()
+                gv.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(gv, positioned: .below, relativeTo: subviews.first)
+                NSLayoutConstraint.activate([
+                    gv.topAnchor.constraint(equalTo: topAnchor),
+                    gv.bottomAnchor.constraint(equalTo: bottomAnchor),
+                    gv.leadingAnchor.constraint(equalTo: leadingAnchor),
+                    gv.trailingAnchor.constraint(equalTo: trailingAnchor),
+                ])
+                glassView = gv
+            }
+            glassView?.isHidden = false
+            glassView?.setTint(Theme.sidebarBg)
+        } else {
+            layer?.backgroundColor = Theme.sidebarBg.cgColor
+            glassView?.isHidden = true
+        }
+    }
+
     func refreshTheme() {
-        layer?.backgroundColor = Theme.sidebarBg.cgColor
+        applyGlassOrSolid()
         bottomBorder.layer?.backgroundColor = Theme.outlineVariant.cgColor
         pathLabel.textColor = Theme.tertiaryText
         expandButton.refreshDimState()
@@ -1071,10 +1154,14 @@ class EditorDropdownButton: NSView {
 
     private let iconView = NSImageView()
     private let label = NSTextField(labelWithString: "")
+    private let divider = NSView()
     private let chevron = NSImageView()
-    private let backgroundView = NSView()
+    private let mainBg = NSView()
+    private let chevronBg = NSView()
     private var trackingAreaRef: NSTrackingArea?
-    private var isHovered = false { didSet { refreshTheme() } }
+
+    private enum HoverZone { case none, main, chevron }
+    private var hoverZone: HoverZone = .none { didSet { refreshTheme() } }
 
     var isEnabled: Bool = true {
         didSet { refreshTheme() }
@@ -1091,9 +1178,13 @@ class EditorDropdownButton: NSView {
     private func setupUI() {
         wantsLayer = true
 
-        backgroundView.wantsLayer = true
-        backgroundView.translatesAutoresizingMaskIntoConstraints = false
-        addSubview(backgroundView)
+        mainBg.wantsLayer = true
+        mainBg.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(mainBg)
+
+        chevronBg.wantsLayer = true
+        chevronBg.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(chevronBg)
 
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.imageScaling = .scaleProportionallyUpOrDown
@@ -1107,6 +1198,10 @@ class EditorDropdownButton: NSView {
         label.lineBreakMode = .byTruncatingTail
         addSubview(label)
 
+        divider.wantsLayer = true
+        divider.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(divider)
+
         chevron.translatesAutoresizingMaskIntoConstraints = false
         chevron.image = NSImage(
             systemSymbolName: "chevron.down",
@@ -1118,10 +1213,15 @@ class EditorDropdownButton: NSView {
         addSubview(chevron)
 
         NSLayoutConstraint.activate([
-            backgroundView.topAnchor.constraint(equalTo: topAnchor),
-            backgroundView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            backgroundView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            backgroundView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            mainBg.topAnchor.constraint(equalTo: topAnchor),
+            mainBg.leadingAnchor.constraint(equalTo: leadingAnchor),
+            mainBg.trailingAnchor.constraint(equalTo: divider.leadingAnchor),
+            mainBg.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            chevronBg.topAnchor.constraint(equalTo: topAnchor),
+            chevronBg.leadingAnchor.constraint(equalTo: divider.trailingAnchor),
+            chevronBg.trailingAnchor.constraint(equalTo: trailingAnchor),
+            chevronBg.bottomAnchor.constraint(equalTo: bottomAnchor),
 
             iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
             iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
@@ -1131,8 +1231,13 @@ class EditorDropdownButton: NSView {
             label.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 4),
             label.centerYAnchor.constraint(equalTo: centerYAnchor),
 
-            chevron.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 3),
-            chevron.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
+            divider.leadingAnchor.constraint(equalTo: label.trailingAnchor, constant: 4),
+            divider.centerYAnchor.constraint(equalTo: centerYAnchor),
+            divider.widthAnchor.constraint(equalToConstant: 1),
+            divider.heightAnchor.constraint(equalToConstant: 12),
+
+            chevron.leadingAnchor.constraint(equalTo: divider.trailingAnchor, constant: 4),
+            chevron.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -5),
             chevron.centerYAnchor.constraint(equalTo: centerYAnchor),
             chevron.widthAnchor.constraint(equalToConstant: 8),
             chevron.heightAnchor.constraint(equalToConstant: 8),
@@ -1144,8 +1249,8 @@ class EditorDropdownButton: NSView {
 
     override var intrinsicContentSize: NSSize {
         let labelWidth = label.intrinsicContentSize.width
-        // icon(14) + gap(4) + label + gap(3) + chevron(8) + padding(12)
-        return NSSize(width: 6 + 14 + 4 + labelWidth + 3 + 8 + 6, height: 22)
+        // icon(14) + gap(4) + label + gap(4) + divider(1) + gap(4) + chevron(8) + padding(11)
+        return NSSize(width: 6 + 14 + 4 + labelWidth + 4 + 1 + 4 + 8 + 5, height: 22)
     }
 
     private func updateLabel() {
@@ -1161,21 +1266,36 @@ class EditorDropdownButton: NSView {
     }
 
     func refreshTheme() {
-        backgroundView.layer?.cornerRadius = Theme.CornerRadius.element
-        backgroundView.layer?.borderWidth = 1
-        backgroundView.layer?.borderColor = Theme.outlineVariant.cgColor
+        let radius = Theme.CornerRadius.element
+        let border = Theme.outlineVariant.cgColor
+        let restBg = Theme.surfaceContainerHigh.cgColor
+        let disabledBg = Theme.surfaceContainerHigh.withAlphaComponent(0.35).cgColor
+        let hoverBg = Theme.hoverBg.cgColor
+
+        // Main button area - round left corners only
+        mainBg.layer?.maskedCorners = [.layerMinXMinYCorner, .layerMinXMaxYCorner]
+        mainBg.layer?.cornerRadius = radius
+        mainBg.layer?.borderWidth = 1
+        mainBg.layer?.borderColor = border
+
+        // Chevron area - round right corners only
+        chevronBg.layer?.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
+        chevronBg.layer?.cornerRadius = radius
+        chevronBg.layer?.borderWidth = 1
+        chevronBg.layer?.borderColor = border
 
         if !isEnabled {
-            backgroundView.layer?.backgroundColor = Theme.surfaceContainerHigh.withAlphaComponent(0.35).cgColor
-        } else if isHovered {
-            backgroundView.layer?.backgroundColor = Theme.hoverBg.cgColor
+            mainBg.layer?.backgroundColor = disabledBg
+            chevronBg.layer?.backgroundColor = disabledBg
         } else {
-            backgroundView.layer?.backgroundColor = Theme.surfaceContainerHigh.cgColor
+            mainBg.layer?.backgroundColor = hoverZone == .main ? hoverBg : restBg
+            chevronBg.layer?.backgroundColor = hoverZone == .chevron ? hoverBg : restBg
         }
 
         let foreground: NSColor = isEnabled ? Theme.secondaryText : Theme.quaternaryText
         label.font = Theme.Fonts.label(size: 10)
         label.textColor = foreground
+        divider.layer?.backgroundColor = Theme.outlineVariant.withAlphaComponent(0.5).cgColor
         chevron.contentTintColor = foreground
         chevron.alphaValue = isEnabled ? 0.6 : 0.3
     }
@@ -1184,7 +1304,20 @@ class EditorDropdownButton: NSView {
 
     override func mouseDown(with event: NSEvent) {
         guard isEnabled else { return }
-        showMenu()
+        let localPoint = convert(event.locationInWindow, from: nil)
+        if localPoint.x >= divider.frame.minX {
+            showMenu()
+        } else {
+            openDefaultEditor()
+        }
+    }
+
+    private func openDefaultEditor() {
+        guard let editor = ExternalEditorHelper.defaultEditor() else {
+            showMenu()
+            return
+        }
+        onOpenFile?(editor.bundleID)
     }
 
     private func showMenu() {
@@ -1234,15 +1367,21 @@ class EditorDropdownButton: NSView {
         if let trackingAreaRef { removeTrackingArea(trackingAreaRef) }
         let area = NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            options: [.mouseEnteredAndExited, .mouseMoved, .activeInKeyWindow, .inVisibleRect],
             owner: self, userInfo: nil
         )
         addTrackingArea(area)
         trackingAreaRef = area
     }
 
-    override func mouseEntered(with event: NSEvent) { isHovered = true }
-    override func mouseExited(with event: NSEvent) { isHovered = false }
+    private func zoneForEvent(_ event: NSEvent) -> HoverZone {
+        let x = convert(event.locationInWindow, from: nil).x
+        return x >= divider.frame.minX ? .chevron : .main
+    }
+
+    override func mouseEntered(with event: NSEvent) { hoverZone = zoneForEvent(event) }
+    override func mouseMoved(with event: NSEvent) { hoverZone = zoneForEvent(event) }
+    override func mouseExited(with event: NSEvent) { hoverZone = .none }
 }
 
 // MARK: - EditorTextContentView

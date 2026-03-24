@@ -51,6 +51,7 @@ class FileTreeView: NSView {
     private var scrollView: NSScrollView!
     private var rootNode: FileTreeNode?
     private var headerLabel: NSTextField!
+    private var refreshButton: DimIconButton!
     private var currentPath: String?
 
     private static let rowHeight: CGFloat = 22
@@ -77,7 +78,14 @@ class FileTreeView: NSView {
     @objc private func themeDidChange() {
         headerLabel.font = Theme.Fonts.headline(size: 11)
         headerLabel.textColor = Theme.primaryText
+        refreshButton.refreshDimState()
         outlineView.reloadData()
+    }
+
+    @objc private func refreshClicked() {
+        guard let path = currentPath else { return }
+        currentPath = nil
+        setRootPath(path)
     }
 
     private func setupUI() {
@@ -93,6 +101,23 @@ class FileTreeView: NSView {
         headerLabel.isSelectable = false
         headerLabel.lineBreakMode = .byTruncatingMiddle
         addSubview(headerLabel)
+
+        refreshButton = DimIconButton()
+        refreshButton.translatesAutoresizingMaskIntoConstraints = false
+        refreshButton.image = NSImage(
+            systemSymbolName: "arrow.clockwise",
+            accessibilityDescription: "Refresh"
+        )?.withSymbolConfiguration(
+            NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+        )
+        refreshButton.imagePosition = .imageOnly
+        refreshButton.bezelStyle = .accessoryBarAction
+        refreshButton.isBordered = false
+        refreshButton.target = self
+        refreshButton.action = #selector(refreshClicked)
+        refreshButton.toolTip = "Refresh file tree"
+        refreshButton.refreshDimState()
+        addSubview(refreshButton)
 
         outlineView = NSOutlineView()
         outlineView.headerView = nil
@@ -125,7 +150,12 @@ class FileTreeView: NSView {
         NSLayoutConstraint.activate([
             headerLabel.topAnchor.constraint(equalTo: topAnchor, constant: 8),
             headerLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            headerLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            headerLabel.trailingAnchor.constraint(lessThanOrEqualTo: refreshButton.leadingAnchor, constant: -4),
+
+            refreshButton.centerYAnchor.constraint(equalTo: headerLabel.centerYAnchor),
+            refreshButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            refreshButton.widthAnchor.constraint(equalToConstant: 18),
+            refreshButton.heightAnchor.constraint(equalToConstant: 18),
 
             scrollView.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 6),
             scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),

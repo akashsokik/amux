@@ -76,7 +76,7 @@ enum ShortcutAction: String, CaseIterable {
         case .resizeRight: return String(Character(UnicodeScalar(NSRightArrowFunctionKey)!))
         case .zoomPane: return "\r"
         case .equalizePanes: return "="
-        case .toggleSidebar: return "\\"
+        case .toggleSidebar: return "b"
         case .increaseFontSize: return "+"
         case .decreaseFontSize: return "-"
         case .resetFontSize: return "0"

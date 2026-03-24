@@ -3,6 +3,7 @@ import AppKit
 class PaneStatusBar: NSView {
     static let barHeight: CGFloat = 22
 
+    private var glassView: GlassBackgroundView?
     private let leftStack = NSStackView()
     private let centerStack = NSStackView()
     private let rightStack = NSStackView()
@@ -105,6 +106,7 @@ class PaneStatusBar: NSView {
             rightStack.centerYAnchor.constraint(equalTo: centerYAnchor),
             rightStack.leadingAnchor.constraint(greaterThanOrEqualTo: centerStack.trailingAnchor, constant: 12),
         ])
+        applyGlassOrSolid()
     }
 
     // MARK: - Rebuild
@@ -178,8 +180,31 @@ class PaneStatusBar: NSView {
         rebuild()
     }
 
+    private func applyGlassOrSolid() {
+        if Theme.useVibrancy {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            if glassView == nil {
+                let gv = GlassBackgroundView()
+                gv.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(gv, positioned: .below, relativeTo: subviews.first)
+                NSLayoutConstraint.activate([
+                    gv.topAnchor.constraint(equalTo: topAnchor),
+                    gv.bottomAnchor.constraint(equalTo: bottomAnchor),
+                    gv.leadingAnchor.constraint(equalTo: leadingAnchor),
+                    gv.trailingAnchor.constraint(equalTo: trailingAnchor),
+                ])
+                glassView = gv
+            }
+            glassView?.isHidden = false
+            glassView?.setTint(Theme.background)
+        } else {
+            layer?.backgroundColor = Theme.background.cgColor
+            glassView?.isHidden = true
+        }
+    }
+
     @objc private func themeDidChange() {
-        layer?.backgroundColor = Theme.background.cgColor
+        applyGlassOrSolid()
         topBorder.layer?.backgroundColor = Theme.borderPrimary.cgColor
         rebuild()
     }

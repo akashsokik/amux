@@ -52,6 +52,7 @@ class TerminalPane: NSView {
 
     // MARK: - Views
 
+    private var glassView: GlassBackgroundView?
     private var tabBar: PaneTabBar!
     private var tabBarHeightConstraint: NSLayoutConstraint!
     private var searchBar: PaneSearchBar?
@@ -116,6 +117,7 @@ class TerminalPane: NSView {
             addInitialTab()
         }
         setupDropDestination()
+        applyGlassOrSolid()
         NotificationCenter.default.addObserver(
             self, selector: #selector(themeDidChange),
             name: Theme.didChangeNotification, object: nil
@@ -129,8 +131,31 @@ class TerminalPane: NSView {
         }
     }
 
+    private func applyGlassOrSolid() {
+        if Theme.useVibrancy {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            if glassView == nil {
+                let gv = GlassBackgroundView(blending: .behindWindow)
+                gv.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(gv, positioned: .below, relativeTo: subviews.first)
+                NSLayoutConstraint.activate([
+                    gv.topAnchor.constraint(equalTo: topAnchor),
+                    gv.bottomAnchor.constraint(equalTo: bottomAnchor),
+                    gv.leadingAnchor.constraint(equalTo: leadingAnchor),
+                    gv.trailingAnchor.constraint(equalTo: trailingAnchor),
+                ])
+                glassView = gv
+            }
+            glassView?.isHidden = false
+            glassView?.setTint(Theme.background, opacity: 0.35)
+        } else {
+            layer?.backgroundColor = Theme.background.cgColor
+            glassView?.isHidden = true
+        }
+    }
+
     @objc private func themeDidChange() {
-        layer?.backgroundColor = Theme.background.cgColor
+        applyGlassOrSolid()
     }
 
     @available(*, unavailable)

@@ -79,10 +79,33 @@ enum ProcessHelper {
 
     /// Read the git branch from .git/HEAD (fast, no subprocess).
     static func gitBranch(at path: String) -> String? {
-        var dir = URL(fileURLWithPath: path)
-        while dir.path != "/" {
-            let gitHead = dir.appendingPathComponent(".git/HEAD")
-            if let content = try? String(contentsOf: gitHead, encoding: .utf8) {
+        var dir = path
+        while dir != "/" && !dir.isEmpty {
+            let gitPath = (dir as NSString).appendingPathComponent(".git")
+            var headPath = (gitPath as NSString).appendingPathComponent("HEAD")
+
+            // If .git is a file (worktree), resolve the actual gitdir
+            var isDir: ObjCBool = false
+            if FileManager.default.fileExists(atPath: gitPath, isDirectory: &isDir), !isDir.boolValue {
+                // .git file contains "gitdir: <path>"
+                guard let gitFileContent = try? String(contentsOfFile: gitPath, encoding: .utf8),
+                      gitFileContent.hasPrefix("gitdir: ") else {
+                    dir = (dir as NSString).deletingLastPathComponent
+                    continue
+                }
+                let gitdir = gitFileContent.dropFirst("gitdir: ".count)
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                let resolvedGitdir: String
+                if (gitdir as NSString).isAbsolutePath {
+                    resolvedGitdir = gitdir
+                } else {
+                    resolvedGitdir = (dir as NSString).appendingPathComponent(gitdir)
+                }
+                headPath = (resolvedGitdir as NSString).appendingPathComponent("HEAD")
+            }
+
+            if let data = FileManager.default.contents(atPath: headPath),
+               let content = String(data: data, encoding: .utf8) {
                 if content.hasPrefix("ref: refs/heads/") {
                     return String(content.dropFirst("ref: refs/heads/".count))
                         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -90,7 +113,7 @@ enum ProcessHelper {
                 // Detached HEAD
                 return String(content.prefix(8)).trimmingCharacters(in: .whitespacesAndNewlines)
             }
-            dir = dir.deletingLastPathComponent()
+            dir = (dir as NSString).deletingLastPathComponent
         }
         return nil
     }

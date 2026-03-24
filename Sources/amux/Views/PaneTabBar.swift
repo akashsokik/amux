@@ -27,6 +27,7 @@ class PaneTabBar: NSView {
     weak var delegate: PaneTabBarDelegate?
     var ownerPaneID: UUID = UUID()
 
+    private var glassView: GlassBackgroundView?
     private var scrollView: NSScrollView!
     private var tabContainer: NSView!
     private var addButton: DimIconButton!
@@ -49,8 +50,31 @@ class PaneTabBar: NSView {
         NotificationCenter.default.removeObserver(self)
     }
 
+    private func applyGlassOrSolid() {
+        if Theme.useVibrancy {
+            layer?.backgroundColor = NSColor.clear.cgColor
+            if glassView == nil {
+                let gv = GlassBackgroundView()
+                gv.translatesAutoresizingMaskIntoConstraints = false
+                addSubview(gv, positioned: .below, relativeTo: subviews.first)
+                NSLayoutConstraint.activate([
+                    gv.topAnchor.constraint(equalTo: topAnchor),
+                    gv.bottomAnchor.constraint(equalTo: bottomAnchor),
+                    gv.leadingAnchor.constraint(equalTo: leadingAnchor),
+                    gv.trailingAnchor.constraint(equalTo: trailingAnchor),
+                ])
+                glassView = gv
+            }
+            glassView?.isHidden = false
+            glassView?.setTint(Theme.surfaceContainerLow)
+        } else {
+            layer?.backgroundColor = Theme.surfaceContainerLow.cgColor
+            glassView?.isHidden = true
+        }
+    }
+
     @objc private func themeDidChange() {
-        layer?.backgroundColor = Theme.surfaceContainerLow.cgColor
+        applyGlassOrSolid()
         addButton.refreshDimState()
         for item in tabItemViews {
             item.refreshTheme()
@@ -119,6 +143,7 @@ class PaneTabBar: NSView {
         ])
 
         registerForDraggedTypes([.tabDrag])
+        applyGlassOrSolid()
     }
 
     // MARK: - Update

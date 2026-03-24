@@ -58,6 +58,10 @@ enum Theme {
     static var accent: NSColor { primary }
     static var accentUI: NSColor { primary }
 
+    // MARK: - Glassmorphism
+
+    static var useVibrancy: Bool { ThemeManager.shared.glassmorphismEnabled }
+
     // MARK: - Corner Radius
 
     enum CornerRadius {

@@ -78,6 +78,7 @@ class MainWindowController: NSWindowController {
     private(set) var sidebarView: SidebarView!
     private(set) var splitContainerView: SplitContainerView!
     private(set) var globalStatusBar: PaneStatusBar!
+    private var titlebarGlassView: GlassBackgroundView?
     private var sidebarWidthConstraint: NSLayoutConstraint!
     private var sidebarLeadingConstraint: NSLayoutConstraint!
     private var resizeHandle: SidebarResizeHandle!
@@ -135,8 +136,16 @@ class MainWindowController: NSWindowController {
 
     @objc private func themeDidChange() {
         window?.appearance = NSAppearance(named: ThemeManager.shared.current.isLight ? .aqua : .darkAqua)
-        window?.backgroundColor = Theme.background
-        window?.contentView?.layer?.backgroundColor = Theme.background.cgColor
+        if Theme.useVibrancy {
+            window?.backgroundColor = .clear
+            window?.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
+            titlebarGlassView?.isHidden = false
+            titlebarGlassView?.setTint(Theme.background, opacity: 0.55)
+        } else {
+            window?.backgroundColor = Theme.background
+            window?.contentView?.layer?.backgroundColor = Theme.background.cgColor
+            titlebarGlassView?.isHidden = true
+        }
         for button in toolbarButtons {
             button.refreshTheme()
         }
@@ -242,6 +251,16 @@ class MainWindowController: NSWindowController {
         }
         contentView.addSubview(editorResizeHandle)
 
+        // Glass background behind the titlebar/toolbar area (center region only).
+        // Sidebars already extend to contentView.topAnchor with their own glass views,
+        // but the toolbar strip above the split container has no backing in glass mode.
+        let tbGlass = GlassBackgroundView(blending: .behindWindow)
+        tbGlass.translatesAutoresizingMaskIntoConstraints = false
+        tbGlass.setTint(Theme.background, opacity: 0.55)
+        tbGlass.isHidden = !Theme.useVibrancy
+        contentView.addSubview(tbGlass, positioned: .above, relativeTo: splitContainerView)
+        titlebarGlassView = tbGlass
+
         // Left sidebar constraints (leading edge, slides left to hide)
         sidebarLeadingConstraint = sidebarView.leadingAnchor.constraint(
             equalTo: contentView.leadingAnchor, constant: 0
@@ -278,6 +297,12 @@ class MainWindowController: NSWindowController {
             editorResizeHandle.topAnchor.constraint(equalTo: contentView.topAnchor),
             editorResizeHandle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             editorResizeHandle.widthAnchor.constraint(equalToConstant: 5),
+
+            // Titlebar glass: spans the toolbar strip above the split container
+            tbGlass.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor),
+            tbGlass.trailingAnchor.constraint(equalTo: editorSidebarView.leadingAnchor),
+            tbGlass.topAnchor.constraint(equalTo: contentView.topAnchor),
+            tbGlass.bottomAnchor.constraint(equalTo: layoutGuide.topAnchor),
 
             // Split container: between the two sidebars
             splitContainerView.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor),
@@ -319,13 +344,18 @@ class MainWindowController: NSWindowController {
         // Mirror of left sidebar: 0 = visible, +editorSidebarWidth = off-screen right
         let targetTrailing: CGFloat = isEditorSidebarVisible ? 0 : editorSidebarWidth
 
+        GhosttyTerminalView.deferSurfaceResize = true
+        if Theme.useVibrancy { editorSidebarView.setGlassHidden(true) }
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = Theme.Animation.standard
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            context.allowsImplicitAnimation = true
 
             editorSidebarTrailingConstraint.animator().constant = targetTrailing
             window?.contentView?.layoutSubtreeIfNeeded()
+        }, completionHandler: {
+            GhosttyTerminalView.deferSurfaceResize = false
+            self.splitContainerView.needsLayout = true
+            if Theme.useVibrancy { self.editorSidebarView.setGlassHidden(false) }
         })
     }
 
@@ -336,14 +366,18 @@ class MainWindowController: NSWindowController {
 
         let targetLeading: CGFloat = isSidebarVisible ? 0 : -sidebarWidth
 
+        GhosttyTerminalView.deferSurfaceResize = true
+        if Theme.useVibrancy { sidebarView.setGlassHidden(true) }
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = Theme.Animation.standard
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
-            context.allowsImplicitAnimation = true
 
             sidebarLeadingConstraint.animator().constant = targetLeading
             window?.contentView?.layoutSubtreeIfNeeded()
         }, completionHandler: {
+            GhosttyTerminalView.deferSurfaceResize = false
+            self.splitContainerView.needsLayout = true
+            if Theme.useVibrancy { self.sidebarView.setGlassHidden(false) }
             if self.isSidebarVisible {
                 self.sidebarView.reloadSessions()
             }
