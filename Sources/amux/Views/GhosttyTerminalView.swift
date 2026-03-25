@@ -175,15 +175,32 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
     override func layout() {
         super.layout()
         focusBorderLayer?.frame = bounds
+        syncSurfaceSize()
+    }
 
+    override func setFrameSize(_ newSize: NSSize) {
+        super.setFrameSize(newSize)
+        syncSurfaceSize(for: newSize)
+    }
+
+    override func setBoundsSize(_ newSize: NSSize) {
+        super.setBoundsSize(newSize)
+        syncSurfaceSize(for: newSize)
+    }
+
+    private func syncSurfaceSize(for size: NSSize? = nil) {
         guard let surface = surface else { return }
 
         // Skip surface resize during animated sidebar toggles to avoid flickering.
         // The final size is applied once the animation completes.
         if GhosttyTerminalView.deferSurfaceResize { return }
 
-        // Update the surface size with the framebuffer (scaled) size
-        let scaledSize = self.convertToBacking(bounds.size)
+        let targetSize = size ?? bounds.size
+        guard targetSize.width > 0, targetSize.height > 0 else { return }
+
+        let scaledSize = convertToBacking(targetSize)
+        guard scaledSize.width > 0, scaledSize.height > 0 else { return }
+
         ghostty_surface_set_size(surface, UInt32(scaledSize.width), UInt32(scaledSize.height))
     }
 
@@ -206,9 +223,7 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         let yScale = fbFrame.size.height / self.frame.size.height
         ghostty_surface_set_content_scale(surface, xScale, yScale)
 
-        // Update size
-        let scaledSize = self.convertToBacking(bounds.size)
-        ghostty_surface_set_size(surface, UInt32(scaledSize.width), UInt32(scaledSize.height))
+        syncSurfaceSize()
     }
 
     override func viewDidMoveToWindow() {

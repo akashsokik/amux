@@ -250,21 +250,10 @@ class TerminalPane: NSView {
         addSubview(tv)
         activeTabID = tabID
 
-        // Create ghostty surface if window is available
-        if let appDelegate = NSApp.delegate as? AppDelegate,
-           let ghosttyApp = appDelegate.ghosttyApp,
-           let app = ghosttyApp.app {
-            let pidsBefore = Set(ProcessHelper.childPids())
-            withSurfaceEnvironment(forTabID: tabID) {
-                tv.createSurface(app: app)
-            }
-            // Discover shell PID for the new tab (with retries for fish etc.)
-            discoverShellPid(pidsBefore: pidsBefore, attempt: 0, forTabID: tabID)
-        }
-
         tv.isFocused = isFocused
         layoutTerminalViews()
         refreshTabBar()
+        createSurfacesIfNeeded(preferredTabIDForPidDiscovery: tabID)
 
         if isFocused { tv.focus() }
     }
@@ -459,37 +448,45 @@ class TerminalPane: NSView {
     override func layout() {
         super.layout()
         layoutTerminalViews()
+        createSurfacesIfNeeded(preferredTabIDForPidDiscovery: activeTabID)
     }
 
     // MARK: - Surface Creation
 
     func createSurface(ghosttyApp: GhosttyApp) {
-        guard let app = ghosttyApp.app else { return }
-        for (tabID, tv) in terminalViewsByTab {
-            withSurfaceEnvironment(forTabID: tabID) {
-                tv.createSurface(app: app)
+        _ = ghosttyApp
+        layoutTerminalViews()
+        createSurfacesIfNeeded(preferredTabIDForPidDiscovery: activeTabID)
+    }
+
+    private func createSurfacesIfNeeded(preferredTabIDForPidDiscovery tabID: UUID?) {
+        guard window != nil else { return }
+        guard let appDelegate = NSApp.delegate as? AppDelegate,
+              let ghosttyApp = appDelegate.ghosttyApp,
+              let app = ghosttyApp.app else { return }
+
+        let pendingTabs = terminalViewsByTab
+            .filter { $0.value.surface == nil && $0.value.bounds.width > 0 && $0.value.bounds.height > 0 }
+
+        guard !pendingTabs.isEmpty else { return }
+
+        let pidsBefore = Set(ProcessHelper.childPids())
+        for (pendingTabID, terminalView) in pendingTabs {
+            withSurfaceEnvironment(forTabID: pendingTabID) {
+                terminalView.createSurface(app: app)
             }
+        }
+
+        if pendingTabs.contains(where: { $0.key == tabID }) {
+            discoverShellPid(pidsBefore: pidsBefore, attempt: 0, forTabID: tabID)
         }
     }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         guard window != nil else { return }
-
-        if let appDelegate = NSApp.delegate as? AppDelegate,
-           let ghosttyApp = appDelegate.ghosttyApp,
-           let app = ghosttyApp.app {
-            let pidsBefore = Set(ProcessHelper.childPids())
-            for (tabID, tv) in terminalViewsByTab where tv.surface == nil {
-                withSurfaceEnvironment(forTabID: tabID) {
-                    tv.createSurface(app: app)
-                }
-            }
-            // Discover the shell PID spawned by the new surface.
-            // Use retries with increasing delays to handle shells like fish
-            // that may take longer to appear in the process table.
-            discoverShellPid(pidsBefore: pidsBefore, attempt: 0, forTabID: activeTabID)
-        }
+        layoutTerminalViews()
+        createSurfacesIfNeeded(preferredTabIDForPidDiscovery: activeTabID)
     }
 
     /// Attempt to discover the shell PID with retries.
