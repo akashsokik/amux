@@ -637,6 +637,7 @@ private class SessionCellView: NSView {
 
     func configure(session: Session, isActive: Bool, index: Int) {
         isActiveSession = isActive
+        isHovered = false
         nameLabel.stringValue = session.name
 
         colorDot.layer?.backgroundColor = session.statusColor.cgColor
