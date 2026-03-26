@@ -352,12 +352,10 @@ private class WorktreeCellView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
-        iconView.alphaValue = 1.0
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
-        iconView.alphaValue = 0.5
     }
 
     private func setupSubviews() {
@@ -422,9 +420,8 @@ private class WorktreeCellView: NSView {
             systemSymbolName: "arrow.triangle.branch",
             accessibilityDescription: nil
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         iconView.contentTintColor = worktree.isCurrent ? Theme.primary : Theme.tertiaryText
-        iconView.alphaValue = worktree.isCurrent ? 1.0 : 0.5
     }
 }

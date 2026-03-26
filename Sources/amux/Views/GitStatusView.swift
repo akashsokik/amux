@@ -112,7 +112,7 @@ class GitStatusView: NSView {
             systemSymbolName: "arrow.clockwise",
             accessibilityDescription: "Refresh"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         refreshButton = DimIconButton(image: refreshImage ?? NSImage(), target: self, action: #selector(refreshClicked))
         refreshButton.translatesAutoresizingMaskIntoConstraints = false

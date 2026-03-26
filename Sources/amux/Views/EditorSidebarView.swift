@@ -649,7 +649,7 @@ class EditorHeaderView: NSView {
             systemSymbolName: "arrow.left.and.line.vertical.and.arrow.right",
             accessibilityDescription: "Expand Editor"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         expandButton.imagePosition = .imageOnly
         expandButton.bezelStyle = .accessoryBarAction
@@ -666,7 +666,7 @@ class EditorHeaderView: NSView {
             systemSymbolName: "square.and.arrow.down",
             accessibilityDescription: "Save File"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         saveButton.imagePosition = .imageOnly
         saveButton.bezelStyle = .accessoryBarAction
@@ -691,7 +691,7 @@ class EditorHeaderView: NSView {
             systemSymbolName: "xmark",
             accessibilityDescription: "Close File"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold)
+            NSImage.SymbolConfiguration(pointSize: 8, weight: .medium)
         )
         closeButton.imagePosition = .imageOnly
         closeButton.bezelStyle = .accessoryBarAction
@@ -819,7 +819,7 @@ class EditorHeaderView: NSView {
             systemSymbolName: symbolName,
             accessibilityDescription: expanded ? "Collapse Editor" : "Expand Editor"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         expandButton.toolTip = expanded ? "Collapse Editor" : "Expand Editor"
     }
@@ -847,7 +847,7 @@ class EditorTabItemView: NSView {
     private let iconView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let dirtyDot = NSView()
-    private let closeButton = NSButton()
+    private let closeButton = DimIconButton()
     private let highlightView = NSView()
     private var trackingArea: NSTrackingArea?
 
@@ -867,7 +867,7 @@ class EditorTabItemView: NSView {
         didSet { updateAppearance() }
     }
 
-    private var iconColor: NSColor = Theme.quaternaryText
+    private var iconColor: NSColor = Theme.tertiaryText
 
     init(tabID: UUID, title: String, isDirty: Bool, fileExtension: String = "") {
         self.tabID = tabID
@@ -895,7 +895,7 @@ class EditorTabItemView: NSView {
             systemSymbolName: iconInfo.symbolName,
             accessibilityDescription: "File"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         iconView.contentTintColor = iconInfo.color
         iconView.imageScaling = .scaleProportionallyUpOrDown
@@ -922,17 +922,15 @@ class EditorTabItemView: NSView {
             systemSymbolName: "xmark",
             accessibilityDescription: "Close Tab"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 8, weight: .bold)
+            NSImage.SymbolConfiguration(pointSize: 8, weight: .medium)
         )
         closeButton.imagePosition = .imageOnly
         closeButton.bezelStyle = .accessoryBarAction
         closeButton.isBordered = false
         closeButton.target = self
         closeButton.action = #selector(closeClicked)
-        closeButton.alphaValue = 0
-        if let cell = closeButton.cell as? NSButtonCell {
-            cell.highlightsBy = .contentsCellMask
-        }
+        closeButton.isHidden = true
+        closeButton.refreshDimState()
         addSubview(closeButton)
 
         updateAppearance()
@@ -1001,22 +999,20 @@ class EditorTabItemView: NSView {
             titleLabel.textColor = Theme.primaryText
             iconView.contentTintColor = iconColor
             iconView.alphaValue = 1.0
-            closeButton.contentTintColor = Theme.primaryText
         } else if isHovered {
             highlightView.layer?.backgroundColor = Theme.hoverBg.cgColor
             titleLabel.textColor = Theme.secondaryText
             iconView.contentTintColor = iconColor
             iconView.alphaValue = 1.0
-            closeButton.contentTintColor = Theme.secondaryText
         } else {
             highlightView.layer?.backgroundColor = NSColor.clear.cgColor
             titleLabel.textColor = Theme.tertiaryText
             iconView.contentTintColor = iconColor
-            iconView.alphaValue = 0.5
-            closeButton.contentTintColor = Theme.quaternaryText
+            iconView.alphaValue = 1.0
         }
 
-        closeButton.alphaValue = (isActive || isHovered) ? 1 : 0
+        closeButton.isHidden = !(isActive || isHovered)
+        closeButton.refreshDimState()
     }
 
     func refreshTheme() {
@@ -1209,7 +1205,7 @@ class EditorDropdownButton: NSView {
             systemSymbolName: "chevron.down",
             accessibilityDescription: nil
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 7, weight: .semibold)
+            NSImage.SymbolConfiguration(pointSize: 8, weight: .medium)
         )
         chevron.imageScaling = .scaleProportionallyUpOrDown
         addSubview(chevron)

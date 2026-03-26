@@ -28,6 +28,12 @@ class ThemeManager {
         NotificationCenter.default.post(name: Theme.didChangeNotification, object: nil)
     }
 
+    /// Switch between dark and light variant of the current theme family.
+    func toggleAppearance() {
+        guard let companion = current.companion else { return }
+        applyTheme(companion)
+    }
+
     func toggleGlassmorphism() {
         glassmorphismEnabled.toggle()
         savePrefs()

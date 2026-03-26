@@ -16,8 +16,6 @@ class GitSegment: StatusBarSegment {
 
     func render() -> NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-        let dim = Theme.quaternaryText
-
         dirtyDot.wantsLayer = true
         dirtyDot.layer?.cornerRadius = 2.5
         dirtyDot.layer?.backgroundColor = NSColor(srgbRed: 0.9, green: 0.7, blue: 0.3, alpha: 1.0).cgColor
@@ -29,13 +27,12 @@ class GitSegment: StatusBarSegment {
             systemSymbolName: "arrow.triangle.branch",
             accessibilityDescription: "Branch"
         )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .medium))
-        branchIcon.contentTintColor = dim
-        branchIcon.alphaValue = 0.5
+        branchIcon.contentTintColor = Theme.tertiaryText
         branchIcon.widthAnchor.constraint(equalToConstant: 10).isActive = true
         branchIcon.heightAnchor.constraint(equalToConstant: 10).isActive = true
 
         branchLabel.font = font
-        branchLabel.textColor = dim
+        branchLabel.textColor = Theme.tertiaryText
         branchLabel.backgroundColor = .clear
         branchLabel.isBezeled = false
         branchLabel.isEditable = false

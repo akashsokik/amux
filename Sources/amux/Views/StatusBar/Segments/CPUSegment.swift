@@ -15,24 +15,20 @@ class CPUSegment: StatusBarSegment {
 
     func render() -> NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
-        let dim = Theme.quaternaryText
-
         iconView.image = NSImage(
             systemSymbolName: "cpu",
             accessibilityDescription: "CPU"
         )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .medium))
-        iconView.contentTintColor = dim
+        iconView.contentTintColor = Theme.tertiaryText
         iconView.widthAnchor.constraint(equalToConstant: 12).isActive = true
         iconView.heightAnchor.constraint(equalToConstant: 12).isActive = true
 
         valueLabel.font = font
-        valueLabel.textColor = dim
+        valueLabel.textColor = Theme.tertiaryText
         valueLabel.backgroundColor = .clear
         valueLabel.isBezeled = false
         valueLabel.isEditable = false
         valueLabel.isSelectable = false
-
-        iconView.alphaValue = 0.5
 
         let stack = HoverableSegmentStack(views: [iconView, valueLabel])
         stack.segmentIcon = iconView

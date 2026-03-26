@@ -8,71 +8,7 @@ private extension NSToolbarItem.Identifier {
     static let actions = NSToolbarItem.Identifier("actions")
 }
 
-private final class ToolbarIconButton: NSButton {
-    private var trackingArea: NSTrackingArea?
-    private var isHovered = false {
-        didSet { updateAppearance() }
-    }
-
-    override var isHighlighted: Bool {
-        didSet { updateAppearance() }
-    }
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setButtonType(.momentaryChange)
-        isBordered = false
-        imagePosition = .imageOnly
-        wantsLayer = true
-        focusRingType = .none
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError()
-    }
-
-    func refreshTheme() {
-        updateAppearance()
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let existing = trackingArea {
-            removeTrackingArea(existing)
-        }
-
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        trackingArea = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        isHovered = true
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        isHovered = false
-    }
-
-    private func updateAppearance() {
-        if isHighlighted {
-            contentTintColor = Theme.primaryText
-            alphaValue = 1.0
-        } else if isHovered {
-            contentTintColor = Theme.secondaryText
-            alphaValue = 1.0
-        } else {
-            contentTintColor = Theme.quaternaryText
-            alphaValue = 0.5
-        }
-    }
-}
+private typealias ToolbarIconButton = DimIconButton
 
 class MainWindowController: NSWindowController {
     private(set) var sidebarView: SidebarView!
@@ -149,7 +85,7 @@ class MainWindowController: NSWindowController {
             titlebarGlassView?.isHidden = true
         }
         for button in toolbarButtons {
-            button.refreshTheme()
+            button.refreshDimState()
         }
         toolbarEditorDropdown?.refreshTheme()
     }
@@ -269,11 +205,17 @@ class MainWindowController: NSWindowController {
         )
         sidebarWidthConstraint = sidebarView.widthAnchor.constraint(equalToConstant: sidebarWidth)
 
+        // Clip content view so off-screen sidebars don't leak beyond the window
+        contentView.wantsLayer = true
+        contentView.layer?.masksToBounds = true
+
         // Right editor sidebar constraints (trailing edge, slides right to hide)
         editorSidebarTrailingConstraint = editorSidebarView.trailingAnchor.constraint(
             equalTo: contentView.trailingAnchor, constant: editorSidebarWidth
         )
         editorSidebarWidthConstraint = editorSidebarView.widthAnchor.constraint(equalToConstant: editorSidebarWidth)
+        // Allow the width to yield to window size rather than forcing the window to grow
+        editorSidebarWidthConstraint.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
             // Left sidebar
@@ -342,6 +284,16 @@ class MainWindowController: NSWindowController {
 
     func toggleEditorSidebar() {
         isEditorSidebarVisible.toggle()
+
+        // Clamp width so the sidebar never overflows the window
+        if isEditorSidebarVisible, let contentView = window?.contentView {
+            let leftEdge: CGFloat = isSidebarVisible ? sidebarWidth : 0
+            let minTerminalWidth: CGFloat = 200
+            let available = contentView.bounds.width - leftEdge - minTerminalWidth
+            let clamped = editorSidebarWidth.clamped(to: minEditorSidebarWidth...max(minEditorSidebarWidth, available))
+            editorSidebarWidthConstraint.constant = clamped
+            editorSidebarWidth = clamped
+        }
 
         // Mirror of left sidebar: 0 = visible, +editorSidebarWidth = off-screen right
         let targetTrailing: CGFloat = isEditorSidebarVisible ? 0 : editorSidebarWidth
@@ -514,12 +466,12 @@ extension MainWindowController: NSToolbarDelegate {
             systemSymbolName: symbolName,
             accessibilityDescription: accessibilityDescription
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 13, weight: .semibold)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         button.target = self
         button.action = action
         button.setFrameSize(NSSize(width: 30, height: 24))
-        button.refreshTheme()
+        button.refreshDimState()
         toolbarButtons.append(button)
         return button
     }

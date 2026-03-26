@@ -224,7 +224,7 @@ class SidebarView: NSView {
             systemSymbolName: symbolName,
             accessibilityDescription: symbolName
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 13, weight: .regular)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         button.imagePosition = .imageOnly
         button.bezelStyle = .accessoryBarAction

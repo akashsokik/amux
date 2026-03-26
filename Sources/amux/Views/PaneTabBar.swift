@@ -113,7 +113,7 @@ class PaneTabBar: NSView {
             systemSymbolName: "plus",
             accessibilityDescription: "New Tab"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         addButton.imagePosition = .imageOnly
         addButton.bezelStyle = .accessoryBarAction
@@ -296,7 +296,7 @@ class PaneTabItemView: NSView {
 
     private let iconView = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
-    private let closeButton = NSButton()
+    private let closeButton = DimIconButton()
     private let highlightView = NSView()
     private var trackingArea: NSTrackingArea?
     private var dragOrigin: NSPoint?
@@ -340,7 +340,7 @@ class PaneTabItemView: NSView {
             systemSymbolName: "terminal",
             accessibilityDescription: "Terminal"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 11, weight: .semibold)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         let colorIndex = abs(tabID.hashValue) % Session.palette.count
         iconView.contentTintColor = NSColor(hexString: Session.palette[colorIndex]) ?? Theme.quaternaryText
@@ -363,18 +363,15 @@ class PaneTabItemView: NSView {
             systemSymbolName: "xmark",
             accessibilityDescription: "Close Tab"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 8, weight: .bold)
+            NSImage.SymbolConfiguration(pointSize: 8, weight: .medium)
         )
         closeButton.imagePosition = .imageOnly
         closeButton.bezelStyle = .accessoryBarAction
         closeButton.isBordered = false
-        closeButton.contentTintColor = Theme.quaternaryText
         closeButton.target = self
         closeButton.action = #selector(closeClicked)
-        closeButton.alphaValue = 0
-        if let cell = closeButton.cell as? NSButtonCell {
-            cell.highlightsBy = .contentsCellMask
-        }
+        closeButton.isHidden = true
+        closeButton.refreshDimState()
         addSubview(closeButton)
 
         updateAppearance()
@@ -453,28 +450,22 @@ class PaneTabItemView: NSView {
             highlightView.layer?.backgroundColor = Theme.surfaceContainerHigh.cgColor
             titleLabel.textColor = Theme.primaryText
             iconView.alphaValue = 1.0
-            closeButton.contentTintColor = Theme.primaryText
         } else if isHovered {
             highlightView.layer?.backgroundColor = Theme.hoverBg.cgColor
             titleLabel.textColor = Theme.secondaryText
             iconView.alphaValue = 1.0
-            closeButton.contentTintColor = Theme.secondaryText
         } else {
             highlightView.layer?.backgroundColor = NSColor.clear.cgColor
             titleLabel.textColor = Theme.tertiaryText
-            iconView.alphaValue = 0.5
-            closeButton.contentTintColor = Theme.quaternaryText
+            iconView.alphaValue = 1.0
         }
 
-        if showCloseButton {
-            closeButton.alphaValue = (isActive || isHovered) ? 1 : 0
-        } else {
-            closeButton.alphaValue = 0
-        }
+        closeButton.isHidden = !(showCloseButton && (isActive || isHovered))
+        closeButton.refreshDimState()
     }
 
     func refreshTheme() {
-        closeButton.contentTintColor = Theme.quaternaryText
+        closeButton.refreshDimState()
         updateAppearance()
     }
 

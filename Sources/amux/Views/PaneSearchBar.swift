@@ -107,7 +107,7 @@ class PaneSearchBar: NSView {
             systemSymbolName: symbolName,
             accessibilityDescription: symbolName
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         btn.imagePosition = .imageOnly
         btn.bezelStyle = .accessoryBarAction
