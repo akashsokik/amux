@@ -108,7 +108,7 @@ class FileTreeView: NSView {
             systemSymbolName: "arrow.clockwise",
             accessibilityDescription: "Refresh"
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         refreshButton.imagePosition = .imageOnly
         refreshButton.bezelStyle = .accessoryBarAction
@@ -286,12 +286,10 @@ private class FileTreeCellView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
-        iconView.alphaValue = 1.0
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
-        iconView.alphaValue = 0.5
     }
 
     private func setupSubviews() {
@@ -335,10 +333,9 @@ private class FileTreeCellView: NSView {
             systemSymbolName: info.symbolName,
             accessibilityDescription: nil
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 11, weight: .regular)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         iconView.contentTintColor = info.color
-        iconView.alphaValue = 0.5
         nameLabel.textColor = node.isDirectory ? Theme.secondaryText : Theme.tertiaryText
     }
 }

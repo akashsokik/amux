@@ -21,7 +21,6 @@ class ExitCodeSegment: StatusBarSegment {
             accessibilityDescription: "Exit Code"
         )?.withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .medium))
         iconView.contentTintColor = red
-        iconView.alphaValue = 0.5
         iconView.widthAnchor.constraint(equalToConstant: 12).isActive = true
         iconView.heightAnchor.constraint(equalToConstant: 12).isActive = true
 

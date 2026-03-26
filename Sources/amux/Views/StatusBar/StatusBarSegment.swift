@@ -14,7 +14,7 @@ protocol StatusBarSegment: AnyObject {
     func update()
 }
 
-/// A stack view that dims its icon by default and brightens it on hover.
+/// A stack view that brightens its icon on hover (consistent with native editor button style).
 class HoverableSegmentStack: NSStackView {
     weak var segmentIcon: NSImageView?
     private var hoverArea: NSTrackingArea?
@@ -32,10 +32,10 @@ class HoverableSegmentStack: NSStackView {
     }
 
     override func mouseEntered(with event: NSEvent) {
-        segmentIcon?.alphaValue = 1.0
+        segmentIcon?.contentTintColor = Theme.secondaryText
     }
 
     override func mouseExited(with event: NSEvent) {
-        segmentIcon?.alphaValue = 0.5
+        segmentIcon?.contentTintColor = Theme.tertiaryText
     }
 }

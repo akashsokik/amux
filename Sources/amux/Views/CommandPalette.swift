@@ -348,8 +348,7 @@ private class PaletteCellView: NSView {
 
         iconView.translatesAutoresizingMaskIntoConstraints = false
         iconView.imageScaling = .scaleProportionallyUpOrDown
-        iconView.contentTintColor = Theme.quaternaryText
-        iconView.alphaValue = 0.5
+        iconView.contentTintColor = Theme.tertiaryText
         addSubview(iconView)
 
         nameLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -393,12 +392,11 @@ private class PaletteCellView: NSView {
             systemSymbolName: icon,
             accessibilityDescription: nil
         )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 12, weight: .regular)
+            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
         )
         highlightView.layer?.backgroundColor = isSelected ? Theme.activeBg.cgColor : NSColor.clear.cgColor
         nameLabel.textColor = isSelected ? Theme.primaryText : Theme.secondaryText
-        iconView.contentTintColor = isSelected ? Theme.primaryText : Theme.quaternaryText
-        iconView.alphaValue = isSelected ? 1.0 : 0.5
+        iconView.contentTintColor = isSelected ? Theme.primaryText : Theme.tertiaryText
 
         // Rebuild shortcut pills
         badgeStack.arrangedSubviews.forEach { $0.removeFromSuperview() }

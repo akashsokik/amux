@@ -604,15 +604,25 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             PaletteCommand(name: "Find in Terminal", shortcut: "Cmd+F", icon: "magnifyingglass") { [weak self] in self?.findInTerminal(nil) },
         ] + [
             PaletteCommand(
+                name: "Toggle Dark/Light Mode",
+                shortcut: "",
+                icon: ThemeManager.shared.current.isLight ? "moon" : "sun.max"
+            ) { [weak self] in
+                self?.toggleAppearance(nil)
+            },
+            PaletteCommand(
                 name: "Toggle Glassmorphism",
                 shortcut: "",
                 icon: ThemeManager.shared.glassmorphismEnabled ? "checkmark.circle.fill" : "circle"
             ) { [weak self] in
                 self?.toggleGlassmorphism(nil)
             },
-        ] + ThemeManager.shared.available.map { [weak self] theme in
-            PaletteCommand(name: "Theme: \(theme.name)", shortcut: "", icon: "paintpalette") {
-                self?.applyThemeAndUpdateMenu(theme)
+        ] + ThemeManager.shared.available.filter({ !$0.isLight }).map { [weak self] theme in
+            let isCurrent = ThemeManager.shared.current.familyName == theme.familyName
+            return PaletteCommand(name: "Theme: \(theme.name)", shortcut: "", icon: isCurrent ? "checkmark.circle.fill" : "paintpalette") {
+                // Apply the dark or light variant depending on current appearance preference
+                let target = ThemeManager.shared.current.isLight ? (theme.companion ?? theme) : theme
+                self?.applyThemeAndUpdateMenu(target)
             }
         } + StatusBarConfig.shared.registeredSegments.map { info in
             let enabled = StatusBarConfig.shared.isEnabled(info.id)
@@ -631,6 +641,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         guard let themeID = sender.representedObject as? String,
               let theme = ThemeManager.shared.available.first(where: { $0.id == themeID }) else { return }
         applyThemeAndUpdateMenu(theme)
+    }
+
+    @objc private func toggleAppearance(_ sender: Any?) {
+        ThemeManager.shared.toggleAppearance()
+        ghosttyApp?.updateTerminalBackground()
+        // Update checkmarks in the Theme menu
+        guard let mainMenu = NSApp.mainMenu else { return }
+        for menuItem in mainMenu.items {
+            guard menuItem.submenu?.title == "Theme" else { continue }
+            for item in menuItem.submenu?.items ?? [] {
+                item.state = (item.representedObject as? String) == ThemeManager.shared.current.id ? .on : .off
+            }
+        }
     }
 
     @objc private func toggleGlassmorphism(_ sender: Any?) {

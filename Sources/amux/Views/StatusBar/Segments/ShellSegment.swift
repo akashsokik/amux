@@ -28,7 +28,7 @@ class ShellSegment: StatusBarSegment {
     func render() -> NSView {
         let font = NSFont.monospacedSystemFont(ofSize: 10, weight: .regular)
         valueLabel.font = font
-        valueLabel.textColor = Theme.quaternaryText
+        valueLabel.textColor = Theme.tertiaryText
         valueLabel.backgroundColor = .clear
         valueLabel.isBezeled = false
         valueLabel.isEditable = false

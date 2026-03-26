@@ -77,29 +77,29 @@ enum Theme {
         static let standard: TimeInterval = 0.25
     }
 
-    // MARK: - Fonts (Space Grotesk with system fallback)
+    // MARK: - Fonts (Roboto Mono with system fallback)
 
     enum Fonts {
-        private static let familyName = "Space Grotesk"
+        private static let familyName = "Roboto Mono"
 
         static func display(size: CGFloat) -> NSFont {
-            NSFont(name: "\(familyName) Bold", size: size)
-                ?? NSFont.systemFont(ofSize: size, weight: .bold)
+            NSFont(name: "RobotoMono-Bold", size: size)
+                ?? NSFont.monospacedSystemFont(ofSize: size, weight: .bold)
         }
 
         static func headline(size: CGFloat) -> NSFont {
-            NSFont(name: "\(familyName) Medium", size: size)
-                ?? NSFont.systemFont(ofSize: size, weight: .medium)
+            NSFont(name: "RobotoMono-Medium", size: size)
+                ?? NSFont.monospacedSystemFont(ofSize: size, weight: .medium)
         }
 
         static func body(size: CGFloat) -> NSFont {
-            NSFont(name: familyName, size: size)
-                ?? NSFont.systemFont(ofSize: size, weight: .regular)
+            NSFont(name: "RobotoMono-Regular", size: size)
+                ?? NSFont.monospacedSystemFont(ofSize: size, weight: .regular)
         }
 
         static func label(size: CGFloat) -> NSFont {
-            NSFont(name: "\(familyName) Medium", size: size)
-                ?? NSFont.systemFont(ofSize: size, weight: .medium)
+            NSFont(name: "RobotoMono-Medium", size: size)
+                ?? NSFont.monospacedSystemFont(ofSize: size, weight: .medium)
         }
     }
 
@@ -107,9 +107,9 @@ enum Theme {
 
     static func registerFonts() {
         let fontNames = [
-            "SpaceGrotesk-Regular",
-            "SpaceGrotesk-Medium",
-            "SpaceGrotesk-Bold",
+            "RobotoMono-Regular",
+            "RobotoMono-Medium",
+            "RobotoMono-Bold",
         ]
 
         let bundle = Bundle.main
