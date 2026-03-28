@@ -431,6 +431,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         splitHItem.target = self
         paneMenu.addItem(splitHItem)
 
+        for preset in PaneLayoutPreset.allCases {
+            paneMenu.addItem(makePaneLayoutMenuItem(for: preset))
+        }
+
         paneMenu.addItem(NSMenuItem.separator())
 
         let navUpItem = NSMenuItem(title: "Navigate Up", action: #selector(navigateUp(_:)), keyEquivalent: String(Character(UnicodeScalar(NSUpArrowFunctionKey)!)))
@@ -573,37 +577,77 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - App Actions
 
+    private func makePaneLayoutMenuItem(for preset: PaneLayoutPreset) -> NSMenuItem {
+        let item = NSMenuItem(
+            title: preset.menuTitle,
+            action: #selector(applyPaneLayoutPresetFromMenu(_:)),
+            keyEquivalent: preset.keyEquivalent
+        )
+        item.keyEquivalentModifierMask = preset.modifierMask
+        item.representedObject = preset.rawValue
+        item.target = self
+        return item
+    }
+
+    private func applyPaneLayoutPreset(_ preset: PaneLayoutPreset) {
+        guard let session = sessionManager.activeSession else { return }
+        guard session.applyLayoutPreset(preset) else {
+            NSSound.beep()
+            return
+        }
+
+        windowController.displaySession(session)
+        sessionManager.save()
+    }
+
+    @objc private func applyPaneLayoutPresetFromMenu(_ sender: NSMenuItem) {
+        guard let rawValue = sender.representedObject as? String,
+              let preset = PaneLayoutPreset(rawValue: rawValue) else { return }
+        applyPaneLayoutPreset(preset)
+    }
+
     @objc private func showCommandPalette(_ sender: Any?) {
         guard let window = windowController.window else { return }
         let palette = CommandPaletteController.shared
         if palette.isVisible { palette.dismiss(); return }
 
         palette.commands = [
-            PaletteCommand(name: "New Tab", shortcut: "Cmd+T", icon: "plus.square") { [weak self] in self?.newTab(nil) },
-            PaletteCommand(name: "Close Tab", shortcut: "Cmd+W", icon: "xmark.square") { [weak self] in self?.closeTab(nil) },
-            PaletteCommand(name: "Next Tab", shortcut: "Cmd+Shift+]", icon: "arrow.right.square") { [weak self] in self?.nextTab(nil) },
-            PaletteCommand(name: "Previous Tab", shortcut: "Cmd+Shift+[", icon: "arrow.left.square") { [weak self] in self?.previousTab(nil) },
-            PaletteCommand(name: "New Session", shortcut: "Cmd+Shift+T", icon: "terminal") { [weak self] in self?.newSession(nil) },
-            PaletteCommand(name: "Close Session", shortcut: "Cmd+Shift+W", icon: "xmark.circle") { [weak self] in self?.closeSession(nil) },
-            PaletteCommand(name: "Rename Session", shortcut: "Cmd+Shift+N", icon: "pencil") { [weak self] in self?.renameSession(nil) },
-            PaletteCommand(name: "Next Session", shortcut: "", icon: "arrow.right") { [weak self] in self?.nextSession(nil) },
-            PaletteCommand(name: "Previous Session", shortcut: "", icon: "arrow.left") { [weak self] in self?.previousSession(nil) },
-            PaletteCommand(name: "Split Vertical", shortcut: "Cmd+D", icon: "rectangle.split.1x2") { [weak self] in self?.splitVertical(nil) },
-            PaletteCommand(name: "Split Horizontal", shortcut: "Cmd+Shift+D", icon: "rectangle.split.2x1") { [weak self] in self?.splitHorizontal(nil) },
-            PaletteCommand(name: "Zoom Pane", shortcut: "Cmd+Shift+Enter", icon: "arrow.up.left.and.arrow.down.right") { [weak self] in self?.zoomPane(nil) },
-            PaletteCommand(name: "Equalize Panes", shortcut: "Ctrl+Opt+=", icon: "equal.square") { [weak self] in self?.equalizePanes(nil) },
-            PaletteCommand(name: "Navigate Up", shortcut: "Cmd+Shift+Up", icon: "arrow.up") { [weak self] in self?.navigateUp(nil) },
-            PaletteCommand(name: "Navigate Down", shortcut: "Cmd+Shift+Down", icon: "arrow.down") { [weak self] in self?.navigateDown(nil) },
-            PaletteCommand(name: "Navigate Left", shortcut: "Cmd+Shift+Left", icon: "arrow.left") { [weak self] in self?.navigateLeft(nil) },
-            PaletteCommand(name: "Navigate Right", shortcut: "Cmd+Shift+Right", icon: "arrow.right") { [weak self] in self?.navigateRight(nil) },
-            PaletteCommand(name: "Toggle Sidebar", shortcut: "Cmd+B", icon: "sidebar.left") { [weak self] in self?.toggleSidebar(nil) },
-            PaletteCommand(name: "Toggle Editor Sidebar", shortcut: "Cmd+\\", icon: "sidebar.right") { [weak self] in self?.toggleEditorSidebar(nil) },
-            PaletteCommand(name: "Increase Font Size", shortcut: "Cmd++", icon: "plus.magnifyingglass") { [weak self] in self?.increaseFontSize(nil) },
-            PaletteCommand(name: "Decrease Font Size", shortcut: "Cmd+-", icon: "minus.magnifyingglass") { [weak self] in self?.decreaseFontSize(nil) },
-            PaletteCommand(name: "Reset Font Size", shortcut: "Cmd+0", icon: "1.magnifyingglass") { [weak self] in self?.resetFontSize(nil) },
-            PaletteCommand(name: "Find in Terminal", shortcut: "Cmd+F", icon: "magnifyingglass") { [weak self] in self?.findInTerminal(nil) },
+            PaletteCommand(category: "Tabs", name: "New Tab", shortcut: "Cmd+T", icon: "plus.square") { [weak self] in self?.newTab(nil) },
+            PaletteCommand(category: "Tabs", name: "Close Tab", shortcut: "Cmd+W", icon: "xmark.square") { [weak self] in self?.closeTab(nil) },
+            PaletteCommand(category: "Tabs", name: "Next Tab", shortcut: "Cmd+Shift+]", icon: "arrow.right.square") { [weak self] in self?.nextTab(nil) },
+            PaletteCommand(category: "Tabs", name: "Previous Tab", shortcut: "Cmd+Shift+[", icon: "arrow.left.square") { [weak self] in self?.previousTab(nil) },
+            PaletteCommand(category: "Sessions", name: "New Session", shortcut: "Cmd+Shift+T", icon: "terminal") { [weak self] in self?.newSession(nil) },
+            PaletteCommand(category: "Sessions", name: "Close Session", shortcut: "Cmd+Shift+W", icon: "xmark.circle") { [weak self] in self?.closeSession(nil) },
+            PaletteCommand(category: "Sessions", name: "Rename Session", shortcut: "Cmd+Shift+N", icon: "pencil") { [weak self] in self?.renameSession(nil) },
+            PaletteCommand(category: "Sessions", name: "Next Session", shortcut: "", icon: "arrow.right") { [weak self] in self?.nextSession(nil) },
+            PaletteCommand(category: "Sessions", name: "Previous Session", shortcut: "", icon: "arrow.left") { [weak self] in self?.previousSession(nil) },
+            PaletteCommand(category: "Panes", name: "Split Vertical", shortcut: "Cmd+D", icon: "rectangle.split.1x2") { [weak self] in self?.splitVertical(nil) },
+            PaletteCommand(category: "Panes", name: "Split Horizontal", shortcut: "Cmd+Shift+D", icon: "rectangle.split.2x1") { [weak self] in self?.splitHorizontal(nil) },
+        ] + PaneLayoutPreset.allCases.map { [weak self] preset in
+            PaletteCommand(
+                category: "Layouts",
+                name: preset.menuTitle,
+                shortcut: preset.shortcutLabel,
+                icon: preset.icon
+            ) {
+                self?.applyPaneLayoutPreset(preset)
+            }
+        } + [
+            PaletteCommand(category: "Panes", name: "Zoom Pane", shortcut: "Cmd+Shift+Enter", icon: "arrow.up.left.and.arrow.down.right") { [weak self] in self?.zoomPane(nil) },
+            PaletteCommand(category: "Panes", name: "Equalize Panes", shortcut: "Cmd+Opt+=", icon: "equal.square") { [weak self] in self?.equalizePanes(nil) },
+            PaletteCommand(category: "Navigation", name: "Navigate Up", shortcut: "Cmd+Shift+Up", icon: "arrow.up") { [weak self] in self?.navigateUp(nil) },
+            PaletteCommand(category: "Navigation", name: "Navigate Down", shortcut: "Cmd+Shift+Down", icon: "arrow.down") { [weak self] in self?.navigateDown(nil) },
+            PaletteCommand(category: "Navigation", name: "Navigate Left", shortcut: "Cmd+Shift+Left", icon: "arrow.left") { [weak self] in self?.navigateLeft(nil) },
+            PaletteCommand(category: "Navigation", name: "Navigate Right", shortcut: "Cmd+Shift+Right", icon: "arrow.right") { [weak self] in self?.navigateRight(nil) },
+            PaletteCommand(category: "View", name: "Toggle Sidebar", shortcut: "Cmd+B", icon: "sidebar.left") { [weak self] in self?.toggleSidebar(nil) },
+            PaletteCommand(category: "View", name: "Toggle Editor Sidebar", shortcut: "Cmd+\\", icon: "sidebar.right") { [weak self] in self?.toggleEditorSidebar(nil) },
+            PaletteCommand(category: "View", name: "Increase Font Size", shortcut: "Cmd++", icon: "plus.magnifyingglass") { [weak self] in self?.increaseFontSize(nil) },
+            PaletteCommand(category: "View", name: "Decrease Font Size", shortcut: "Cmd+-", icon: "minus.magnifyingglass") { [weak self] in self?.decreaseFontSize(nil) },
+            PaletteCommand(category: "View", name: "Reset Font Size", shortcut: "Cmd+0", icon: "1.magnifyingglass") { [weak self] in self?.resetFontSize(nil) },
+            PaletteCommand(category: "Search", name: "Find in Terminal", shortcut: "Cmd+F", icon: "magnifyingglass") { [weak self] in self?.findInTerminal(nil) },
         ] + [
             PaletteCommand(
+                category: "Theme",
                 name: "Toggle Dark/Light Mode",
                 shortcut: "",
                 icon: ThemeManager.shared.current.isLight ? "moon" : "sun.max"
@@ -611,6 +655,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.toggleAppearance(nil)
             },
             PaletteCommand(
+                category: "Theme",
                 name: "Toggle Glassmorphism",
                 shortcut: "",
                 icon: ThemeManager.shared.glassmorphismEnabled ? "checkmark.circle.fill" : "circle"
@@ -619,7 +664,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             },
         ] + ThemeManager.shared.available.filter({ !$0.isLight }).map { [weak self] theme in
             let isCurrent = ThemeManager.shared.current.familyName == theme.familyName
-            return PaletteCommand(name: "Theme: \(theme.name)", shortcut: "", icon: isCurrent ? "checkmark.circle.fill" : "paintpalette") {
+            return PaletteCommand(category: "Theme", name: "Theme: \(theme.name)", shortcut: "", icon: isCurrent ? "checkmark.circle.fill" : "paintpalette") {
                 // Apply the dark or light variant depending on current appearance preference
                 let target = ThemeManager.shared.current.isLight ? (theme.companion ?? theme) : theme
                 self?.applyThemeAndUpdateMenu(target)
@@ -627,6 +672,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } + StatusBarConfig.shared.registeredSegments.map { info in
             let enabled = StatusBarConfig.shared.isEnabled(info.id)
             return PaletteCommand(
+                category: "Status Bar",
                 name: "Status Bar: \(info.label)",
                 shortcut: "",
                 icon: enabled ? "checkmark.circle.fill" : "circle"

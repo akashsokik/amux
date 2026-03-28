@@ -11,6 +11,9 @@ enum ShortcutAction: String, CaseIterable {
     // Pane
     case splitVertical
     case splitHorizontal
+    case layoutThreeVerticalPanes
+    case layoutThreeHorizontalPanes
+    case layoutFourEqualPanes
     case closePane
     case navigateUp
     case navigateDown
@@ -38,6 +41,9 @@ enum ShortcutAction: String, CaseIterable {
         case .previousSession: return "Previous Session"
         case .splitVertical: return "Split Vertical"
         case .splitHorizontal: return "Split Horizontal"
+        case .layoutThreeVerticalPanes: return "Layout: 3 Vertical Panes"
+        case .layoutThreeHorizontalPanes: return "Layout: 3 Horizontal Panes"
+        case .layoutFourEqualPanes: return "Layout: 4 Equal Panes"
         case .closePane: return "Close Pane"
         case .navigateUp: return "Navigate Up"
         case .navigateDown: return "Navigate Down"
@@ -65,6 +71,9 @@ enum ShortcutAction: String, CaseIterable {
         case .previousSession: return "["
         case .splitVertical: return "d"
         case .splitHorizontal: return "D"
+        case .layoutThreeVerticalPanes: return "v"
+        case .layoutThreeHorizontalPanes: return "h"
+        case .layoutFourEqualPanes: return "g"
         case .closePane: return "w"
         case .navigateUp: return String(Character(UnicodeScalar(NSUpArrowFunctionKey)!))
         case .navigateDown: return String(Character(UnicodeScalar(NSDownArrowFunctionKey)!))
@@ -92,6 +101,9 @@ enum ShortcutAction: String, CaseIterable {
         case .previousSession: return [.command, .shift]
         case .splitVertical: return [.command]
         case .splitHorizontal: return [.command, .shift]
+        case .layoutThreeVerticalPanes: return [.command, .option]
+        case .layoutThreeHorizontalPanes: return [.command, .option]
+        case .layoutFourEqualPanes: return [.command, .option]
         case .closePane: return [.command]
         case .navigateUp: return [.command, .option]
         case .navigateDown: return [.command, .option]

@@ -1,6 +1,113 @@
 import Foundation
 import AppKit
 
+enum PaneLayoutPreset: String, CaseIterable {
+    case threeVerticalPanes
+    case threeHorizontalPanes
+    case fourEqualPanes
+
+    var paneCount: Int {
+        switch self {
+        case .threeVerticalPanes, .threeHorizontalPanes:
+            return 3
+        case .fourEqualPanes:
+            return 4
+        }
+    }
+
+    var menuTitle: String {
+        switch self {
+        case .threeVerticalPanes:
+            return "Layout: 3 Vertical Panes"
+        case .threeHorizontalPanes:
+            return "Layout: 3 Horizontal Panes"
+        case .fourEqualPanes:
+            return "Layout: 4 Equal Panes"
+        }
+    }
+
+    var shortcutLabel: String {
+        switch self {
+        case .threeVerticalPanes:
+            return "Cmd+Opt+V"
+        case .threeHorizontalPanes:
+            return "Cmd+Opt+H"
+        case .fourEqualPanes:
+            return "Cmd+Opt+G"
+        }
+    }
+
+    var keyEquivalent: String {
+        switch self {
+        case .threeVerticalPanes:
+            return "v"
+        case .threeHorizontalPanes:
+            return "h"
+        case .fourEqualPanes:
+            return "g"
+        }
+    }
+
+    var modifierMask: NSEvent.ModifierFlags {
+        [.command, .option]
+    }
+
+    var icon: String {
+        switch self {
+        case .threeVerticalPanes:
+            return "rectangle.split.1x2"
+        case .threeHorizontalPanes:
+            return "rectangle.split.2x1"
+        case .fourEqualPanes:
+            return "square.grid.2x2"
+        }
+    }
+
+    func makeRoot(paneIDs: [UUID]) -> SplitNode {
+        precondition(paneIDs.count == paneCount)
+
+        switch self {
+        case .threeVerticalPanes:
+            return makeEqualStripeTree(direction: .vertical, paneIDs: paneIDs[...])
+        case .threeHorizontalPanes:
+            return makeEqualStripeTree(direction: .horizontal, paneIDs: paneIDs[...])
+        case .fourEqualPanes:
+            let leftColumn = makeEqualStripeTree(direction: .horizontal, paneIDs: paneIDs.prefix(2))
+            let rightColumn = makeEqualStripeTree(direction: .horizontal, paneIDs: paneIDs.suffix(2))
+            return .split(
+                SplitNode.SplitContainer(
+                    direction: .vertical,
+                    ratio: 0.5,
+                    first: leftColumn,
+                    second: rightColumn
+                )
+            )
+        }
+    }
+
+    private func makeEqualStripeTree(
+        direction: SplitDirection,
+        paneIDs: ArraySlice<UUID>
+    ) -> SplitNode {
+        guard let firstPaneID = paneIDs.first else {
+            preconditionFailure("Pane layout presets require at least one pane ID")
+        }
+
+        if paneIDs.count == 1 {
+            return .leaf(id: firstPaneID)
+        }
+
+        return .split(
+            SplitNode.SplitContainer(
+                direction: direction,
+                ratio: 1.0 / Double(paneIDs.count),
+                first: .leaf(id: firstPaneID),
+                second: makeEqualStripeTree(direction: direction, paneIDs: paneIDs.dropFirst())
+            )
+        )
+    }
+}
+
 enum PaneStatus {
     case idle
     case running
@@ -180,5 +287,28 @@ class Session: ObservableObject, Identifiable {
         splitTree.resize(
             paneID: focusedID, direction: direction, delta: delta
         )
+    }
+
+    // MARK: - Layout presets
+
+    @discardableResult
+    func applyLayoutPreset(_ preset: PaneLayoutPreset) -> Bool {
+        let existingPaneIDs = splitTree.allPaneIDs()
+        guard !existingPaneIDs.isEmpty else { return false }
+        guard existingPaneIDs.count <= preset.paneCount else { return false }
+
+        let missingPaneCount = preset.paneCount - existingPaneIDs.count
+        let paneIDs = existingPaneIDs + (0..<missingPaneCount).map { _ in UUID() }
+
+        splitTree.root = preset.makeRoot(paneIDs: paneIDs)
+        splitTree.zoomedPaneID = nil
+
+        if let focusedPaneID, paneIDs.contains(focusedPaneID) {
+            self.focusedPaneID = focusedPaneID
+        } else {
+            focusedPaneID = paneIDs.first
+        }
+
+        return true
     }
 }

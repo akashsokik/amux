@@ -665,9 +665,9 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         var keyEv = event.ghosttyKeyEvent(action, translationMods: translationEvent?.modifierFlags)
         keyEv.composing = composing
 
-        // Only encode text if it's not a single control character
-        if let text = text, !text.isEmpty,
-           let codepoint = text.utf8.first, codepoint >= 0x20 {
+        // Ghostty should encode physical editing keys like Backspace/Delete
+        // from the key event, not as literal control-text bytes.
+        if let text = text, !text.isEmpty, !text.isSingleControlScalar {
             return text.withCString { ptr in
                 keyEv.text = ptr
                 return ghostty_surface_key(surface, keyEv)

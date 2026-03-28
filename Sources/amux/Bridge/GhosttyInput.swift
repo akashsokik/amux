@@ -3,6 +3,14 @@ import CGhostty
 
 // MARK: - Modifier Conversion
 
+extension String {
+    /// True when this string is a single Unicode control scalar such as ASCII DEL.
+    var isSingleControlScalar: Bool {
+        guard count == 1, let scalar = unicodeScalars.first else { return false }
+        return scalar.value < 0x20 || (0x7F...0x9F).contains(scalar.value)
+    }
+}
+
 /// Convert NSEvent modifier flags to Ghostty modifier flags.
 func ghosttyMods(_ flags: NSEvent.ModifierFlags) -> ghostty_input_mods_e {
     var mods: UInt32 = GHOSTTY_MODS_NONE.rawValue
@@ -63,8 +71,12 @@ extension NSEvent {
         if characters.count == 1,
            let scalar = characters.unicodeScalars.first {
             // Control characters: let Ghostty handle encoding
-            if scalar.value < 0x20 {
-                return self.characters(byApplyingModifiers: modifierFlags.subtracting(.control))
+            if characters.isSingleControlScalar {
+                let baseCharacters = self.characters(byApplyingModifiers: modifierFlags.subtracting(.control))
+                if let baseCharacters, !baseCharacters.isSingleControlScalar {
+                    return baseCharacters
+                }
+                return nil
             }
             // PUA range (function keys) -- don't pass to Ghostty
             if scalar.value >= 0xF700 && scalar.value <= 0xF8FF {

@@ -9,8 +9,8 @@ let package = Package(
     dependencies: [
         // Tree-sitter core (ChimeHQ wrapper)
         .package(url: "https://github.com/ChimeHQ/SwiftTreeSitter", branch: "main"),
-        // Neon (syntax highlighting)
-        .package(url: "https://github.com/ChimeHQ/Neon", branch: "main"),
+        // Vendored Neon with a Swift 6.2 concurrency fix in TreeSitterClient
+        .package(path: "vendor/Neon"),
 
         // Tree-sitter grammars
         .package(url: "https://github.com/alex-pinkus/tree-sitter-swift", branch: "with-generated-files"),
