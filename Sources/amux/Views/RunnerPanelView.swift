@@ -829,6 +829,9 @@ final class RunnerPanelView: NSView {
             return
         }
         if case .task(let task) = item.kind {
+            // Belt-and-braces: double-click implies the row was selected, but
+            // explicitly set so the log panel routes to this task immediately.
+            selectedTaskID = task.id
             toggleRun(task: task)
         }
         // Group rows: NSOutlineView handles expand/collapse itself.
@@ -836,6 +839,10 @@ final class RunnerPanelView: NSView {
 
     fileprivate func toggleRun(task: RunnerTask) {
         guard let worktreePath = store?.worktreePath else { return }
+        // Route the log panel to the task being toggled, so the user sees
+        // output in the bottom pane the moment Run (or Stop) is clicked —
+        // otherwise a red status dot with an empty "—" log panel is confusing.
+        selectedTaskID = task.id
         if let session = runner.session(for: task.id, worktreePath: worktreePath),
            session.status == .running {
             runner.stop(id: task.id, worktreePath: worktreePath)
