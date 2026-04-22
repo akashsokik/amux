@@ -7,6 +7,7 @@ enum PaneTabKind {
     case terminal
     case diff
     case commitDetail
+    case container
 }
 
 struct PaneTab {
@@ -58,10 +59,14 @@ class TerminalPane: NSView {
     private var terminalViewsByTab: [UUID: GhosttyTerminalView] = [:]
     private var diffViewsByTab: [UUID: DiffTabView] = [:]
     private var commitDetailViewsByTab: [UUID: CommitDetailTabView] = [:]
+    private var containerViewsByTab: [UUID: ContainerTabView] = [:]
 
-    /// Content view (terminal / diff / commit detail) backing the given tab.
+    /// Content view (terminal / diff / commit detail / container) backing the given tab.
     private func contentView(forTabID id: UUID) -> NSView? {
-        return terminalViewsByTab[id] ?? diffViewsByTab[id] ?? commitDetailViewsByTab[id]
+        return terminalViewsByTab[id]
+            ?? diffViewsByTab[id]
+            ?? commitDetailViewsByTab[id]
+            ?? containerViewsByTab[id]
     }
 
     private func tabKind(_ id: UUID) -> PaneTabKind {
@@ -301,6 +306,8 @@ class TerminalPane: NSView {
             dv.removeFromSuperview()
         } else if let cv = commitDetailViewsByTab.removeValue(forKey: tabID) {
             cv.removeFromSuperview()
+        } else if let ctv = containerViewsByTab.removeValue(forKey: tabID) {
+            ctv.removeFromSuperview()
         }
         tabs.remove(at: idx)
 
@@ -356,6 +363,7 @@ class TerminalPane: NSView {
             terminalViewsByTab[currentID]?.isFocused = false
             diffViewsByTab[currentID]?.isHidden = true
             commitDetailViewsByTab[currentID]?.isHidden = true
+            containerViewsByTab[currentID]?.isHidden = true
         }
 
         let dv = DiffTabView(filePath: filePath, scope: scope, repoRoot: repoRoot)
@@ -394,6 +402,7 @@ class TerminalPane: NSView {
             terminalViewsByTab[currentID]?.isFocused = false
             diffViewsByTab[currentID]?.isHidden = true
             commitDetailViewsByTab[currentID]?.isHidden = true
+            containerViewsByTab[currentID]?.isHidden = true
         }
 
         let cv = CommitDetailTabView(hash: hash, repoRoot: repoRoot)
@@ -410,6 +419,56 @@ class TerminalPane: NSView {
 
         layoutTerminalViews()
         refreshTabBar()
+    }
+
+    /// Open a container-detail tab (or focus the existing one for the same id).
+    func addContainerTab(id: String) {
+        for tab in tabs where tab.kind == .container {
+            if let cv = containerViewsByTab[tab.id], cv.matches(containerID: id) {
+                if activeTabID != tab.id { switchToTab(tab.id) }
+                cv.reload()
+                return
+            }
+        }
+
+        let tabID = UUID()
+        let title = "container \(String(id.prefix(6)))"
+        let tab = PaneTab(id: tabID, title: title, kind: .container)
+
+        if let activeID = activeTabID,
+           let idx = tabs.firstIndex(where: { $0.id == activeID }) {
+            tabs.insert(tab, at: idx + 1)
+        } else {
+            tabs.append(tab)
+        }
+
+        if let currentID = activeTabID {
+            terminalViewsByTab[currentID]?.isHidden = true
+            terminalViewsByTab[currentID]?.isFocused = false
+            diffViewsByTab[currentID]?.isHidden = true
+            commitDetailViewsByTab[currentID]?.isHidden = true
+            containerViewsByTab[currentID]?.isHidden = true
+        }
+
+        let cv = ContainerTabView(containerID: id)
+        cv.onRequestOpenTerminal = { [weak self] command in
+            self?.addTerminalTab(withInitialCommand: command)
+        }
+        containerViewsByTab[tabID] = cv
+        addSubview(cv)
+        activeTabID = tabID
+
+        layoutTerminalViews()
+        refreshTabBar()
+    }
+
+    /// Spawn a new terminal tab and queue the supplied command (typically with
+    /// a trailing newline) so it runs as soon as the shell prompt appears.
+    func addTerminalTab(withInitialCommand command: String) {
+        addNewTab()
+        if let activeID = activeTabID, let tv = terminalViewsByTab[activeID] {
+            tv.sendText(command)
+        }
     }
 
     func closeActiveTab() {
@@ -432,6 +491,7 @@ class TerminalPane: NSView {
             terminalViewsByTab[currentID]?.isFocused = false
             diffViewsByTab[currentID]?.isHidden = true
             commitDetailViewsByTab[currentID]?.isHidden = true
+            containerViewsByTab[currentID]?.isHidden = true
         }
 
         activeTabID = tabID
@@ -443,6 +503,8 @@ class TerminalPane: NSView {
             dv.isHidden = false
         } else if let cv = commitDetailViewsByTab[tabID] {
             cv.isHidden = false
+        } else if let ctv = containerViewsByTab[tabID] {
+            ctv.isHidden = false
         }
 
         layoutTerminalViews()
@@ -589,6 +651,10 @@ class TerminalPane: NSView {
         for (id, cv) in commitDetailViewsByTab {
             cv.frame = terminalFrame
             cv.isHidden = (id != activeTabID)
+        }
+        for (id, ctv) in containerViewsByTab {
+            ctv.frame = terminalFrame
+            ctv.isHidden = (id != activeTabID)
         }
     }
 

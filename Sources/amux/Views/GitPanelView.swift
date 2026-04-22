@@ -1533,7 +1533,7 @@ final class GitPanelActionButton: NSButton {
 
 // MARK: - Section header (CHANGES / HISTORY)
 
-private final class SectionHeaderView: NSView {
+final class SectionHeaderView: NSView {
     struct Action {
         let symbol: String
         let tooltip: String
@@ -1831,7 +1831,11 @@ private final class FileRowCell: NSView {
 // areas drop events during fast movement or scroll; delegating hover to the table
 // keeps exactly one row highlighted at a time.
 
-private final class HoverTableView: NSTableView {
+protocol HoverableRowCell: AnyObject {
+    func setHovered(_ hovered: Bool)
+}
+
+final class HoverTableView: NSTableView {
     private var trackingAreaRef: NSTrackingArea?
     private(set) var hoveredRow: Int = -1
 
@@ -1890,7 +1894,7 @@ private final class HoverTableView: NSTableView {
 
     private func applyHover(to row: Int, hovered: Bool) {
         guard row >= 0, row < numberOfRows else { return }
-        if let cell = view(atColumn: 0, row: row, makeIfNecessary: false) as? CommitRowCell {
+        if let cell = view(atColumn: 0, row: row, makeIfNecessary: false) as? HoverableRowCell {
             cell.setHovered(hovered)
         }
     }
@@ -1898,7 +1902,7 @@ private final class HoverTableView: NSTableView {
 
 // MARK: - Commit row cell (history)
 
-private final class CommitRowCell: NSView {
+private final class CommitRowCell: NSView, HoverableRowCell {
     private let hoverBg = NSView()
     private let dot = NSView()
     private let subjectLabel = NSTextField(labelWithString: "")

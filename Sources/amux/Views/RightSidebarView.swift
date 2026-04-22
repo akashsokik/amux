@@ -10,6 +10,7 @@ enum RightSidebarMode {
     case editor
     case git
     case runner
+    case containers
 }
 
 protocol RightSidebarViewDelegate: AnyObject {
@@ -29,12 +30,14 @@ final class RightSidebarView: NSView {
     private var editorButton: DimIconButton!
     private var gitButton: DimIconButton!
     private var runnerButton: DimIconButton!
+    private var containersButton: DimIconButton!
     private var collapseButton: DimIconButton!
 
     // Hosted children
     let editorSidebarView: EditorSidebarView
     let gitPanelView: GitPanelView
     let runnerPanelView: RunnerPanelView
+    let containerPanelView: ContainerPanelView
 
     private(set) var mode: RightSidebarMode = .git
 
@@ -43,11 +46,13 @@ final class RightSidebarView: NSView {
     init(
         editorSidebarView: EditorSidebarView,
         gitPanelView: GitPanelView,
-        runnerPanelView: RunnerPanelView
+        runnerPanelView: RunnerPanelView,
+        containerPanelView: ContainerPanelView
     ) {
         self.editorSidebarView = editorSidebarView
         self.gitPanelView = gitPanelView
         self.runnerPanelView = runnerPanelView
+        self.containerPanelView = containerPanelView
         super.init(frame: .zero)
         setupUI()
         applyMode()
@@ -69,6 +74,7 @@ final class RightSidebarView: NSView {
         editorSidebarView.setGlassHidden(hidden)
         gitPanelView.setGlassHidden(hidden)
         runnerPanelView.setGlassHidden(hidden)
+        containerPanelView.setGlassHidden(hidden)
         if hidden {
             layer?.backgroundColor = Theme.sidebarBg.cgColor
         } else {
@@ -107,6 +113,7 @@ final class RightSidebarView: NSView {
         editorButton.refreshDimState()
         gitButton.refreshDimState()
         runnerButton.refreshDimState()
+        containersButton.refreshDimState()
         collapseButton.refreshDimState()
     }
 
@@ -145,6 +152,10 @@ final class RightSidebarView: NSView {
 
         runnerButton = makeIconBarButton(symbol: "play.circle", action: #selector(runnerButtonClicked))
         iconBar.addSubview(runnerButton)
+
+        containersButton = makeIconBarButton(symbol: "shippingbox", action: #selector(containersButtonClicked))
+        containersButton.toolTip = "Containers"
+        iconBar.addSubview(containersButton)
 
         collapseButton = makeIconBarButton(symbol: "chevron.right.2", action: #selector(collapseClicked))
         collapseButton.toolTip = "Collapse sidebar"
@@ -193,6 +204,11 @@ final class RightSidebarView: NSView {
         runnerPanelView.topContentInset = 10
         runnerPanelView.chromeHidden = true
         addSubview(runnerPanelView)
+
+        containerPanelView.translatesAutoresizingMaskIntoConstraints = false
+        containerPanelView.topContentInset = 10
+        containerPanelView.chromeHidden = true
+        addSubview(containerPanelView)
     }
 
     private func setupConstraints() {
@@ -224,6 +240,11 @@ final class RightSidebarView: NSView {
             runnerButton.widthAnchor.constraint(equalToConstant: 24),
             runnerButton.heightAnchor.constraint(equalToConstant: 24),
 
+            containersButton.leadingAnchor.constraint(equalTo: runnerButton.trailingAnchor, constant: 6),
+            containersButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
+            containersButton.widthAnchor.constraint(equalToConstant: 24),
+            containersButton.heightAnchor.constraint(equalToConstant: 24),
+
             collapseButton.trailingAnchor.constraint(equalTo: iconBar.trailingAnchor, constant: -10),
             collapseButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
             collapseButton.widthAnchor.constraint(equalToConstant: 24),
@@ -249,6 +270,11 @@ final class RightSidebarView: NSView {
             runnerPanelView.leadingAnchor.constraint(equalTo: separatorLine.trailingAnchor),
             runnerPanelView.trailingAnchor.constraint(equalTo: trailingAnchor),
             runnerPanelView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            containerPanelView.topAnchor.constraint(equalTo: iconBarSeparator.bottomAnchor),
+            containerPanelView.leadingAnchor.constraint(equalTo: separatorLine.trailingAnchor),
+            containerPanelView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            containerPanelView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
     }
 
@@ -263,13 +289,17 @@ final class RightSidebarView: NSView {
         editorButton.isActiveState = (mode == .editor)
         gitButton.isActiveState = (mode == .git)
         runnerButton.isActiveState = (mode == .runner)
+        containersButton.isActiveState = (mode == .containers)
         editorSidebarView.isHidden = (mode != .editor)
         gitPanelView.isHidden = (mode != .git)
         runnerPanelView.isHidden = (mode != .runner)
+        containerPanelView.isHidden = (mode != .containers)
+        if mode == .containers { containerPanelView.refresh() }
     }
 
     @objc private func editorButtonClicked() { setMode(.editor) }
     @objc private func gitButtonClicked() { setMode(.git) }
     @objc private func runnerButtonClicked() { setMode(.runner) }
+    @objc private func containersButtonClicked() { setMode(.containers) }
     @objc private func collapseClicked() { delegate?.rightSidebarDidRequestCollapse() }
 }
