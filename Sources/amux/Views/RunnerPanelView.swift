@@ -575,7 +575,14 @@ final class RunnerPanelView: NSView {
     }
 
     @objc private func runnerDidUpdate(_ note: Notification) {
-        guard let taskId = note.userInfo?["taskId"] as? String else { return }
+        guard let taskId = note.userInfo?["taskId"] as? String,
+              let notifWorktree = note.userInfo?["worktreePath"] as? String else { return }
+        // Sessions are now keyed by (worktreePath, taskId). Drop notifications
+        // that aren't for the worktree currently bound to this panel — otherwise
+        // worktree A's "npm:dev" output would trigger row/log refreshes in
+        // worktree B's UI.
+        guard let boundWorktree = store?.worktreePath,
+              notifWorktree == boundWorktree else { return }
         // readabilityHandler fires off arbitrary threads; hop to main before
         // touching AppKit.
         DispatchQueue.main.async { [weak self] in
@@ -630,7 +637,8 @@ final class RunnerPanelView: NSView {
 
         // Text view contents.
         guard let id = selectedTaskID,
-              let session = runner.session(for: id) else {
+              let worktreePath = store?.worktreePath,
+              let session = runner.session(for: id, worktreePath: worktreePath) else {
             if replaceContents {
                 setLogText("")
             }
@@ -671,8 +679,9 @@ final class RunnerPanelView: NSView {
         guard promoteButton != nil else { return }
         let hasSelection = selectedTaskID != nil
         let hasSession: Bool = {
-            guard let id = selectedTaskID else { return false }
-            return runner.session(for: id) != nil
+            guard let id = selectedTaskID,
+                  let worktreePath = store?.worktreePath else { return false }
+            return runner.session(for: id, worktreePath: worktreePath) != nil
         }()
         let enabled = hasSelection && hasSession
         promoteButton.isEnabled = enabled
@@ -704,23 +713,26 @@ final class RunnerPanelView: NSView {
         // can scroll the inline log later and see where the run went. Only
         // do this if there's actually a session; a never-started task has
         // nothing to annotate.
-        if let session = runner.session(for: id) {
+        if let session = runner.session(for: id, worktreePath: worktreePath) {
             let formatter = DateFormatter()
             formatter.dateFormat = "HH:mm:ss"
             session.buffer.append("Promoted to pane at \(formatter.string(from: Date()))\n")
-            runner.stop(id: id)
+            runner.stop(id: id, worktreePath: worktreePath)
         }
 
         delegate?.runnerPanelDidRequestOpenInPane(command: task.command, cwd: cwd)
     }
 
     @objc private func stopClicked() {
-        guard let id = selectedTaskID else { return }
-        runner.stop(id: id)
+        guard let id = selectedTaskID,
+              let worktreePath = store?.worktreePath else { return }
+        runner.stop(id: id, worktreePath: worktreePath)
     }
 
     @objc private func clearClicked() {
-        if let id = selectedTaskID, let session = runner.session(for: id) {
+        if let id = selectedTaskID,
+           let worktreePath = store?.worktreePath,
+           let session = runner.session(for: id, worktreePath: worktreePath) {
             session.buffer.clear()
         }
         logTextView?.string = ""
@@ -824,8 +836,9 @@ final class RunnerPanelView: NSView {
 
     fileprivate func toggleRun(task: RunnerTask) {
         guard let worktreePath = store?.worktreePath else { return }
-        if let session = runner.session(for: task.id), session.status == .running {
-            runner.stop(id: task.id)
+        if let session = runner.session(for: task.id, worktreePath: worktreePath),
+           session.status == .running {
+            runner.stop(id: task.id, worktreePath: worktreePath)
         } else {
             runner.start(task, worktreePath: worktreePath)
         }
@@ -933,7 +946,10 @@ extension RunnerPanelView: NSOutlineViewDataSource, NSOutlineViewDelegate {
                 cell = RunnerTaskCell()
                 cell?.identifier = RunnerPanelView.taskCellID
             }
-            let status = runner.session(for: task.id)?.status
+            let status: TaskStatus? = {
+                guard let worktreePath = store?.worktreePath else { return nil }
+                return runner.session(for: task.id, worktreePath: worktreePath)?.status
+            }()
             cell?.configure(task: task, status: status) { [weak self] in
                 self?.toggleRun(task: task)
             }
