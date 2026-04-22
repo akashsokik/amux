@@ -21,7 +21,6 @@ final class RunnerPanelView: NSView {
     /// slot this view under a shared header.
     var topContentInset: CGFloat = 10 {
         didSet {
-            topInsetConstraint?.constant = topContentInset
             scrollTopConstraint?.constant = topContentInset
         }
     }
@@ -51,8 +50,13 @@ final class RunnerPanelView: NSView {
     private var emptyLabel: NSTextField!
     private var outlineView: NSOutlineView!
     private var scrollView: NSScrollView!
-    private var topInsetConstraint: NSLayoutConstraint?
     private var scrollTopConstraint: NSLayoutConstraint?
+
+    // Top header row (title + refresh + plus).
+    private var headerRow: NSView!
+    private var headerTitleLabel: NSTextField!
+    private var refreshButton: DimIconButton!
+    private var addButton: DimIconButton!
 
     // Split view hosting outline (top) + log panel (bottom).
     private var splitView: NSSplitView!
@@ -199,6 +203,34 @@ final class RunnerPanelView: NSView {
         // Bottom container: log panel.
         logContainer = buildLogContainer()
 
+        // Header row: "Tasks" title + refresh + add buttons. Sits above the split view.
+        headerRow = NSView()
+        headerRow.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(headerRow)
+
+        headerTitleLabel = NSTextField(labelWithString: "Tasks")
+        headerTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        headerTitleLabel.font = Theme.Fonts.label(size: 10)
+        headerTitleLabel.textColor = Theme.tertiaryText
+        headerTitleLabel.isBezeled = false
+        headerTitleLabel.isEditable = false
+        headerTitleLabel.isSelectable = false
+        headerTitleLabel.backgroundColor = .clear
+        headerRow.addSubview(headerTitleLabel)
+
+        refreshButton = makeIconButton(
+            symbol: "arrow.clockwise",
+            tooltip: "Refresh tasks",
+            action: #selector(refreshClicked)
+        )
+        addButton = makeIconButton(
+            symbol: "plus.circle",
+            tooltip: "Add custom task",
+            action: #selector(addCustomTaskClicked)
+        )
+        headerRow.addSubview(refreshButton)
+        headerRow.addSubview(addButton)
+
         // Split view wraps both halves.
         splitView = NSSplitView()
         splitView.translatesAutoresizingMaskIntoConstraints = false
@@ -210,10 +242,29 @@ final class RunnerPanelView: NSView {
         splitView.setHoldingPriority(NSLayoutConstraint.Priority(251), forSubviewAt: 0)
         addSubview(splitView)
 
-        let scrollTop = splitView.topAnchor.constraint(equalTo: topAnchor, constant: topContentInset)
+        // Header row sits at top; split view begins below it.
+        let scrollTop = headerRow.topAnchor.constraint(equalTo: topAnchor, constant: topContentInset)
         scrollTopConstraint = scrollTop
         NSLayoutConstraint.activate([
             scrollTop,
+            headerRow.leadingAnchor.constraint(equalTo: leadingAnchor),
+            headerRow.trailingAnchor.constraint(equalTo: trailingAnchor),
+            headerRow.heightAnchor.constraint(equalToConstant: 28),
+
+            headerTitleLabel.leadingAnchor.constraint(equalTo: headerRow.leadingAnchor, constant: 10),
+            headerTitleLabel.centerYAnchor.constraint(equalTo: headerRow.centerYAnchor),
+
+            addButton.trailingAnchor.constraint(equalTo: headerRow.trailingAnchor, constant: -8),
+            addButton.centerYAnchor.constraint(equalTo: headerRow.centerYAnchor),
+            addButton.widthAnchor.constraint(equalToConstant: 20),
+            addButton.heightAnchor.constraint(equalToConstant: 20),
+
+            refreshButton.trailingAnchor.constraint(equalTo: addButton.leadingAnchor, constant: -2),
+            refreshButton.centerYAnchor.constraint(equalTo: headerRow.centerYAnchor),
+            refreshButton.widthAnchor.constraint(equalToConstant: 20),
+            refreshButton.heightAnchor.constraint(equalToConstant: 20),
+
+            splitView.topAnchor.constraint(equalTo: headerRow.bottomAnchor),
             splitView.leadingAnchor.constraint(equalTo: leadingAnchor),
             splitView.trailingAnchor.constraint(equalTo: trailingAnchor),
             splitView.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -231,10 +282,9 @@ final class RunnerPanelView: NSView {
         emptyLabel.backgroundColor = .clear
         addSubview(emptyLabel)
 
-        let topC = emptyLabel.topAnchor.constraint(equalTo: topAnchor, constant: topContentInset)
-        topInsetConstraint = topC
+        // Empty label sits below the header so it never covers the + button.
         NSLayoutConstraint.activate([
-            topC,
+            emptyLabel.topAnchor.constraint(equalTo: headerRow.bottomAnchor, constant: 10),
             emptyLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             emptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 10),
             emptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
@@ -407,6 +457,17 @@ final class RunnerPanelView: NSView {
             emptyLabel.isHidden = true
             splitView.isHidden = false
         }
+        updateHeaderButtonsEnabled()
+    }
+
+    private func updateHeaderButtonsEnabled() {
+        guard refreshButton != nil, addButton != nil else { return }
+        let enabled = store != nil
+        refreshButton.isEnabled = enabled
+        addButton.isEnabled = enabled
+        let alpha: CGFloat = enabled ? 1.0 : 0.4
+        refreshButton.alphaValue = alpha
+        addButton.alphaValue = alpha
     }
 
     // MARK: - Outline data
@@ -592,6 +653,39 @@ final class RunnerPanelView: NSView {
             session.buffer.clear()
         }
         logTextView?.string = ""
+    }
+
+    // MARK: - Header actions
+
+    @objc private func refreshClicked() {
+        store?.reload()
+    }
+
+    @objc private func addCustomTaskClicked() {
+        guard let store, let hostWindow = window else { return }
+
+        // Ids already used by pinned tasks, so we can de-dupe the derived id
+        // against those (and only those — colliding with a detected id is the
+        // intended "override" behavior).
+        let pinnedIDs = Set(store.tasks.filter { $0.source == .pinned }.map(\.id))
+
+        let sheet = AddCustomTaskSheet(existingPinnedIDs: pinnedIDs)
+        sheet.onConfirmHandler = { [weak sheet] task, dismiss in
+            guard let sheet else { return }
+            do {
+                try store.addPinned(task)
+                dismiss()
+            } catch {
+                // Keep the sheet open so the user can fix their input — the
+                // alert is presented on the sheet itself, not the host window.
+                let alert = NSAlert()
+                alert.messageText = "Unable to add task"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.beginSheetModal(for: sheet)
+            }
+        }
+        hostWindow.beginSheet(sheet, completionHandler: nil)
     }
 
     // MARK: - Click handling
