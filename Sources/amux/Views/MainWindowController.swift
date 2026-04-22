@@ -188,7 +188,11 @@ class MainWindowController: NSWindowController {
         let gitPanel = GitPanelView(frame: .zero)
         gitPanel.delegate = self
 
-        rightSidebarView = RightSidebarView(editorSidebarView: editorSidebar, gitPanelView: gitPanel)
+        rightSidebarView = RightSidebarView(
+            editorSidebarView: editorSidebar,
+            gitPanelView: gitPanel,
+            runnerPanelView: RunnerPanelView()
+        )
         rightSidebarView.translatesAutoresizingMaskIntoConstraints = false
         rightSidebarView.delegate = self
         contentView.addSubview(rightSidebarView)
