@@ -41,6 +41,9 @@ final class RunnerPanelView: NSView {
     private(set) var selectedTaskID: String? {
         didSet {
             if oldValue != selectedTaskID {
+                // Default to latest run when switching tasks.
+                selectedRunNumber = nil
+                rebuildRunTabs()
                 refreshLogPanel(replaceContents: true)
             }
         }
@@ -77,6 +80,14 @@ final class RunnerPanelView: NSView {
     private var clearButton: DimIconButton!
     private var logScrollView: NSScrollView!
     private var logTextView: NSTextView!
+    private var logFrameView: NSView!
+    private var runTabsScroll: NSScrollView!
+    private var runTabsStack: NSStackView!
+    private var runTabsHeight: NSLayoutConstraint!
+
+    /// When non-nil, the log panel pins to this run number for the selected
+    /// task. When nil, the panel follows the latest run.
+    private var selectedRunNumber: Int?
 
     // Coalesce log refreshes so rapid output bursts don't starve the main thread.
     private var pendingLogRefresh: DispatchWorkItem?
@@ -142,6 +153,7 @@ final class RunnerPanelView: NSView {
                 store = RunnerTaskStore(worktreePath: p)
                 store?.reload()
                 selectedTaskID = nil
+                selectedRunNumber = nil
                 rebuildOutlineData()
                 outlineView.reloadData()
                 for src in visibleSources {
@@ -152,10 +164,12 @@ final class RunnerPanelView: NSView {
             if store != nil {
                 store = nil
                 selectedTaskID = nil
+                selectedRunNumber = nil
                 rebuildOutlineData()
                 outlineView.reloadData()
             }
         }
+        rebuildRunTabs()
         refreshEmptyState()
         refreshErrorBanner()
     }
@@ -223,7 +237,7 @@ final class RunnerPanelView: NSView {
         headerRow.translatesAutoresizingMaskIntoConstraints = false
         addSubview(headerRow)
 
-        headerTitleLabel = NSTextField(labelWithString: "Tasks")
+        headerTitleLabel = NSTextField(labelWithString: "Runner")
         headerTitleLabel.translatesAutoresizingMaskIntoConstraints = false
         headerTitleLabel.font = Theme.Fonts.label(size: 10)
         headerTitleLabel.textColor = Theme.tertiaryText
@@ -235,12 +249,12 @@ final class RunnerPanelView: NSView {
 
         refreshButton = makeIconButton(
             symbol: "arrow.clockwise",
-            tooltip: "Refresh tasks",
+            tooltip: "Refresh",
             action: #selector(refreshClicked)
         )
         addButton = makeIconButton(
             symbol: "plus.circle",
-            tooltip: "Add custom task",
+            tooltip: "Add custom command",
             action: #selector(addCustomTaskClicked)
         )
         headerRow.addSubview(refreshButton)
@@ -434,6 +448,36 @@ final class RunnerPanelView: NSView {
             promoteButton.heightAnchor.constraint(equalToConstant: 20),
         ])
 
+        // Run-tabs strip sits between the header and the log body. One pill
+        // per run; the active pill tints to `Theme.primary`. Horizontal scroll
+        // keeps long histories reachable on narrow sidebar widths.
+        runTabsStack = NSStackView()
+        runTabsStack.translatesAutoresizingMaskIntoConstraints = false
+        runTabsStack.orientation = .horizontal
+        runTabsStack.spacing = 4
+        runTabsStack.alignment = .centerY
+        runTabsStack.edgeInsets = NSEdgeInsets(top: 0, left: 8, bottom: 0, right: 8)
+
+        runTabsScroll = NSScrollView()
+        runTabsScroll.translatesAutoresizingMaskIntoConstraints = false
+        runTabsScroll.hasVerticalScroller = false
+        runTabsScroll.hasHorizontalScroller = false
+        runTabsScroll.drawsBackground = false
+        runTabsScroll.borderType = .noBorder
+        runTabsScroll.documentView = runTabsStack
+        container.addSubview(runTabsScroll)
+
+        // Themed frame around the log text area — gives logs a distinct
+        // "terminal panel" feel vs. the plain surrounding chrome.
+        logFrameView = NSView()
+        logFrameView.translatesAutoresizingMaskIntoConstraints = false
+        logFrameView.wantsLayer = true
+        logFrameView.layer?.cornerRadius = Theme.CornerRadius.element
+        logFrameView.layer?.backgroundColor = Theme.surfaceContainerLowest.cgColor
+        logFrameView.layer?.borderColor = Theme.outlineVariant.cgColor
+        logFrameView.layer?.borderWidth = 1
+        container.addSubview(logFrameView)
+
         // Log text view — selectable, not editable, monospace.
         let scroll = NSScrollView()
         scroll.translatesAutoresizingMaskIntoConstraints = false
@@ -453,7 +497,7 @@ final class RunnerPanelView: NSView {
         textView.backgroundColor = .clear
         textView.textContainerInset = NSSize(width: 8, height: 6)
         textView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        textView.textColor = Theme.secondaryText
+        textView.textColor = Theme.primaryText
         textView.allowsUndo = false
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
@@ -470,15 +514,32 @@ final class RunnerPanelView: NSView {
         }
 
         scroll.documentView = textView
-        container.addSubview(scroll)
+        logFrameView.addSubview(scroll)
         logScrollView = scroll
         logTextView = textView
 
+        runTabsHeight = runTabsScroll.heightAnchor.constraint(equalToConstant: 0)
+
         NSLayoutConstraint.activate([
-            scroll.topAnchor.constraint(equalTo: header.bottomAnchor),
-            scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            runTabsScroll.topAnchor.constraint(equalTo: header.bottomAnchor),
+            runTabsScroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            runTabsScroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            runTabsHeight,
+
+            runTabsStack.leadingAnchor.constraint(equalTo: runTabsScroll.contentView.leadingAnchor),
+            runTabsStack.topAnchor.constraint(equalTo: runTabsScroll.contentView.topAnchor),
+            runTabsStack.bottomAnchor.constraint(equalTo: runTabsScroll.contentView.bottomAnchor),
+            runTabsStack.heightAnchor.constraint(equalTo: runTabsScroll.heightAnchor),
+
+            logFrameView.topAnchor.constraint(equalTo: runTabsScroll.bottomAnchor, constant: 4),
+            logFrameView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            logFrameView.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            logFrameView.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -8),
+
+            scroll.topAnchor.constraint(equalTo: logFrameView.topAnchor, constant: 1),
+            scroll.leadingAnchor.constraint(equalTo: logFrameView.leadingAnchor, constant: 1),
+            scroll.trailingAnchor.constraint(equalTo: logFrameView.trailingAnchor, constant: -1),
+            scroll.bottomAnchor.constraint(equalTo: logFrameView.bottomAnchor, constant: -1),
         ])
 
         return container
@@ -506,11 +567,11 @@ final class RunnerPanelView: NSView {
 
     private func refreshEmptyState() {
         if store == nil {
-            emptyLabel.stringValue = "Open a worktree to run tasks."
+            emptyLabel.stringValue = "Open a worktree to run commands."
             emptyLabel.isHidden = false
             splitView.isHidden = true
         } else if store?.tasks.isEmpty == true {
-            emptyLabel.stringValue = "No tasks detected. Tap + to add one, or create .amux/tasks.json."
+            emptyLabel.stringValue = "No commands detected. Tap + to add one, or create .amux/tasks.json."
             emptyLabel.isHidden = false
             splitView.isHidden = true
         } else {
@@ -577,6 +638,7 @@ final class RunnerPanelView: NSView {
             if let sel = self.selectedTaskID, self.taskItems[sel] == nil {
                 self.selectedTaskID = nil
             } else {
+                self.rebuildRunTabs()
                 self.refreshLogPanel(replaceContents: false)
             }
         }
@@ -591,19 +653,29 @@ final class RunnerPanelView: NSView {
         // worktree B's UI.
         guard let boundWorktree = store?.worktreePath,
               notifWorktree == boundWorktree else { return }
+        let notifRunNumber = note.userInfo?["runNumber"] as? Int
         // readabilityHandler fires off arbitrary threads; hop to main before
         // touching AppKit.
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
-            // Keep the outline row in sync (status dot, play/stop icon).
+            // Keep the outline row in sync (status square, play/stop icon).
             if let item = self.taskItems[taskId] {
                 self.outlineView.reloadItem(item, reloadChildren: false)
             }
             // Refresh header buttons' enabled state in case session just appeared.
             self.updateLogButtonsEnabled()
-            // Coalesced log text refresh: only if the update is for the selected task.
+            // Update run tabs (new run appeared, or status changed).
             if taskId == self.selectedTaskID {
-                self.scheduleLogRefresh()
+                self.rebuildRunTabs()
+            }
+            // Coalesced log text refresh: only if the update is for the
+            // currently displayed run of the currently selected task.
+            if taskId == self.selectedTaskID {
+                let displayedRun = self.selectedRunNumber
+                    ?? self.runner.session(for: taskId, worktreePath: notifWorktree)?.runNumber
+                if notifRunNumber == nil || notifRunNumber == displayedRun {
+                    self.scheduleLogRefresh()
+                }
             }
         }
     }
@@ -643,10 +715,9 @@ final class RunnerPanelView: NSView {
 
         updateLogButtonsEnabled()
 
-        // Text view contents.
-        guard let id = selectedTaskID,
-              let worktreePath = store?.worktreePath,
-              let session = runner.session(for: id, worktreePath: worktreePath) else {
+        // Text view contents — route through the effective run so tab
+        // selection (pinned historical run) overrides "latest".
+        guard let session = effectiveSession() else {
             if replaceContents {
                 setLogText("")
             }
@@ -655,6 +726,17 @@ final class RunnerPanelView: NSView {
 
         let snapshot = session.buffer.snapshot()
         setLogText(snapshot)
+    }
+
+    /// Run currently feeding the log panel, honoring `selectedRunNumber`
+    /// (historical tab) or falling back to the latest run.
+    private func effectiveSession() -> TaskRunSession? {
+        guard let id = selectedTaskID,
+              let worktreePath = store?.worktreePath else { return nil }
+        if let pinned = selectedRunNumber {
+            return runner.run(for: id, worktreePath: worktreePath, runNumber: pinned)
+        }
+        return runner.session(for: id, worktreePath: worktreePath)
     }
 
     /// Replace the text view's contents, preserving scroll position when the
@@ -685,21 +767,64 @@ final class RunnerPanelView: NSView {
 
     private func updateLogButtonsEnabled() {
         guard promoteButton != nil else { return }
-        let hasSelection = selectedTaskID != nil
-        let hasSession: Bool = {
+        let hasSession = effectiveSession() != nil
+        // Stop only makes sense for the CURRENTLY running (latest) run.
+        let latestRunning: Bool = {
             guard let id = selectedTaskID,
                   let worktreePath = store?.worktreePath else { return false }
-            return runner.session(for: id, worktreePath: worktreePath) != nil
+            return runner.session(for: id, worktreePath: worktreePath)?.status == .running
         }()
-        let enabled = hasSelection && hasSession
-        promoteButton.isEnabled = enabled
-        stopButton.isEnabled = enabled
-        clearButton.isEnabled = enabled
+        promoteButton.isEnabled = hasSession
+        stopButton.isEnabled = latestRunning
+        clearButton.isEnabled = hasSession
         // Alpha hint — DimIconButton doesn't style disabled state on its own.
-        let alpha: CGFloat = enabled ? 1.0 : 0.4
-        promoteButton.alphaValue = alpha
-        stopButton.alphaValue = alpha
-        clearButton.alphaValue = alpha
+        promoteButton.alphaValue = hasSession ? 1.0 : 0.4
+        stopButton.alphaValue = latestRunning ? 1.0 : 0.4
+        clearButton.alphaValue = hasSession ? 1.0 : 0.4
+    }
+
+    // MARK: - Run tabs
+
+    /// Rebuild the run-tab strip for the currently selected task. Empty when
+    /// the task has no history; otherwise one pill per run (oldest → newest).
+    private func rebuildRunTabs() {
+        guard runTabsStack != nil else { return }
+
+        runTabsStack.arrangedSubviews.forEach { view in
+            runTabsStack.removeArrangedSubview(view)
+            view.removeFromSuperview()
+        }
+
+        let runs: [TaskRunSession] = {
+            guard let id = selectedTaskID,
+                  let worktreePath = store?.worktreePath else { return [] }
+            return runner.runs(for: id, worktreePath: worktreePath)
+        }()
+
+        if runs.isEmpty {
+            runTabsHeight.constant = 0
+            return
+        }
+        runTabsHeight.constant = 26
+
+        let activeRun = selectedRunNumber ?? runs.last?.runNumber ?? -1
+        for session in runs {
+            let pill = RunTabPill(runNumber: session.runNumber, status: session.status, isActive: session.runNumber == activeRun)
+            pill.onClick = { [weak self] in
+                self?.selectRun(session.runNumber)
+            }
+            runTabsStack.addArrangedSubview(pill)
+        }
+    }
+
+    fileprivate func selectRun(_ runNumber: Int) {
+        // Pinning to the latest run is equivalent to nil (follow-latest).
+        guard let id = selectedTaskID,
+              let worktreePath = store?.worktreePath else { return }
+        let latest = runner.session(for: id, worktreePath: worktreePath)?.runNumber
+        selectedRunNumber = (runNumber == latest) ? nil : runNumber
+        rebuildRunTabs()
+        refreshLogPanel(replaceContents: true)
     }
 
     // MARK: - Log panel actions
@@ -717,10 +842,10 @@ final class RunnerPanelView: NSView {
             return worktreePath
         }()
 
-        // Leave a breadcrumb in the log buffer BEFORE stopping so the user
-        // can scroll the inline log later and see where the run went. Only
-        // do this if there's actually a session; a never-started task has
-        // nothing to annotate.
+        // Leave a breadcrumb in the latest run's buffer BEFORE stopping so
+        // the user can scroll the inline log later and see where the run
+        // went. Only do this if there's actually a session; a never-started
+        // task has nothing to annotate.
         if let session = runner.session(for: id, worktreePath: worktreePath) {
             let formatter = DateFormatter()
             formatter.dateFormat = "HH:mm:ss"
@@ -738,9 +863,9 @@ final class RunnerPanelView: NSView {
     }
 
     @objc private func clearClicked() {
-        if let id = selectedTaskID,
-           let worktreePath = store?.worktreePath,
-           let session = runner.session(for: id, worktreePath: worktreePath) {
+        // Clear only the currently displayed run's buffer; historical tabs
+        // keep their logs so users can reference prior runs.
+        if let session = effectiveSession() {
             session.buffer.clear()
         }
         logTextView?.string = ""
@@ -879,8 +1004,11 @@ final class RunnerPanelView: NSView {
         guard let worktreePath = store?.worktreePath else { return }
         // Route the log panel to the task being toggled, so the user sees
         // output in the bottom pane the moment Run (or Stop) is clicked —
-        // otherwise a red status dot with an empty "—" log panel is confusing.
+        // otherwise a red status square with an empty "—" log panel is confusing.
         selectedTaskID = task.id
+        // A fresh start should follow the newly-spawned run, not stay pinned
+        // to whatever historical tab the user had selected.
+        selectedRunNumber = nil
         if let session = runner.session(for: task.id, worktreePath: worktreePath),
            session.status == .running {
             runner.stop(id: task.id, worktreePath: worktreePath)
@@ -924,11 +1052,14 @@ final class RunnerPanelView: NSView {
         logTitleLabel?.font = Theme.Fonts.label(size: 10)
         logTaskNameLabel?.textColor = Theme.secondaryText
         logTaskNameLabel?.font = Theme.Fonts.body(size: 11)
-        logTextView?.textColor = Theme.secondaryText
+        logTextView?.textColor = Theme.primaryText
+        logFrameView?.layer?.backgroundColor = Theme.surfaceContainerLowest.cgColor
+        logFrameView?.layer?.borderColor = Theme.outlineVariant.cgColor
         outlineView?.reloadData()
         for src in visibleSources {
             if let item = groupItems[src] { outlineView.expandItem(item) }
         }
+        rebuildRunTabs()
     }
 }
 
@@ -1161,7 +1292,10 @@ private final class RunnerTaskCell: NSView {
 
         statusDot.translatesAutoresizingMaskIntoConstraints = false
         statusDot.wantsLayer = true
-        statusDot.layer?.cornerRadius = 3
+        // Square (not circle) so it's distinguishable from the dirty-dot motif
+        // used elsewhere; subtle rounding keeps it on-brand with the rest of
+        // the app's rounded-rect chrome.
+        statusDot.layer?.cornerRadius = 1.5
         statusDot.layer?.backgroundColor = NSColor.clear.cgColor
         addSubview(statusDot)
 
@@ -1182,8 +1316,8 @@ private final class RunnerTaskCell: NSView {
             statusDot.leadingAnchor.constraint(equalTo: customBadge.trailingAnchor, constant: 6),
             statusDot.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             statusDot.centerYAnchor.constraint(equalTo: centerYAnchor),
-            statusDot.widthAnchor.constraint(equalToConstant: 6),
-            statusDot.heightAnchor.constraint(equalToConstant: 6),
+            statusDot.widthAnchor.constraint(equalToConstant: 8),
+            statusDot.heightAnchor.constraint(equalToConstant: 8),
         ])
     }
 
@@ -1195,9 +1329,9 @@ private final class RunnerTaskCell: NSView {
         let isRunning: Bool
         if let status, case .running = status { isRunning = true } else { isRunning = false }
 
-        let symbolName = isRunning ? "stop.fill" : "play.fill"
+        let symbolName = isRunning ? "stop.circle.fill" : "play.circle.fill"
         toggleButton.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 10, weight: .medium))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
         toggleButton.toolTip = isRunning ? "Stop" : "Run"
         toggleButton.refreshDimState()
 
@@ -1232,5 +1366,115 @@ private final class RunnerTaskCell: NSView {
 
     @objc private func toggleClicked() {
         onToggle?()
+    }
+}
+
+// MARK: - Run tab pill
+//
+// Lightweight pill shown in the run-tabs strip. Carries the run number and a
+// small status square. Clicking selects that run in the log panel.
+
+private final class RunTabPill: NSView {
+    var onClick: (() -> Void)?
+
+    private let label = NSTextField(labelWithString: "")
+    private let statusSquare = NSView()
+    private var isHovered = false
+    private let isActive: Bool
+
+    init(runNumber: Int, status: TaskStatus, isActive: Bool) {
+        self.isActive = isActive
+        super.init(frame: .zero)
+        translatesAutoresizingMaskIntoConstraints = false
+        wantsLayer = true
+        layer?.cornerRadius = Theme.CornerRadius.element
+
+        statusSquare.translatesAutoresizingMaskIntoConstraints = false
+        statusSquare.wantsLayer = true
+        statusSquare.layer?.cornerRadius = 1.5
+        statusSquare.layer?.backgroundColor = Self.color(for: status).cgColor
+        addSubview(statusSquare)
+
+        label.stringValue = "Run \(runNumber)"
+        label.translatesAutoresizingMaskIntoConstraints = false
+        label.font = Theme.Fonts.label(size: 10)
+        label.textColor = isActive ? Theme.primaryText : Theme.tertiaryText
+        label.backgroundColor = .clear
+        label.isBezeled = false
+        label.isEditable = false
+        label.isSelectable = false
+        label.lineBreakMode = .byClipping
+        label.setContentHuggingPriority(.required, for: .horizontal)
+        label.setContentCompressionResistancePriority(.required, for: .horizontal)
+        addSubview(label)
+
+        NSLayoutConstraint.activate([
+            statusSquare.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
+            statusSquare.centerYAnchor.constraint(equalTo: centerYAnchor),
+            statusSquare.widthAnchor.constraint(equalToConstant: 7),
+            statusSquare.heightAnchor.constraint(equalToConstant: 7),
+
+            label.leadingAnchor.constraint(equalTo: statusSquare.trailingAnchor, constant: 5),
+            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
+            label.centerYAnchor.constraint(equalTo: centerYAnchor),
+
+            heightAnchor.constraint(equalToConstant: 20),
+        ])
+
+        applyBackground()
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self, userInfo: nil
+        )
+        addTrackingArea(area)
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true; applyBackground()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false; applyBackground()
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        onClick?()
+    }
+
+    private func applyBackground() {
+        let bg: NSColor
+        if isActive {
+            bg = Theme.activeBg
+        } else if isHovered {
+            bg = Theme.hoverBg
+        } else {
+            bg = .clear
+        }
+        CALayer.performWithoutAnimation {
+            layer?.backgroundColor = bg.cgColor
+        }
+    }
+
+    private static func color(for status: TaskStatus) -> NSColor {
+        switch status {
+        case .running:
+            return Theme.primary
+        case .failedToStart:
+            return NSColor(srgbRed: 0.90, green: 0.30, blue: 0.30, alpha: 1.0)
+        case .exited(let code):
+            return code == 0
+                ? NSColor.gray.withAlphaComponent(0.55)
+                : NSColor(srgbRed: 0.90, green: 0.30, blue: 0.30, alpha: 1.0)
+        case .terminated:
+            return NSColor(srgbRed: 0.95, green: 0.60, blue: 0.20, alpha: 1.0)
+        }
     }
 }
