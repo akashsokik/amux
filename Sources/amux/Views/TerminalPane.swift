@@ -141,14 +141,25 @@ class TerminalPane: NSView {
 
     // MARK: - Init
 
-    init(paneID: UUID, skipInitialTab: Bool = false) {
+    /// Create a pane.
+    /// - Parameters:
+    ///   - paneID: stable id used by the split tree.
+    ///   - skipInitialTab: when true, no terminal tab is spawned. Used when a
+    ///     dragged-in tab will populate the pane instead.
+    ///   - initialInput: optional text fed into the first tab's shell as soon
+    ///     as its PTY is ready. Leverages `GhosttyTerminalView.sendText`'s
+    ///     pending-text buffer, which defers the write until the shell has had
+    ///     a chance to draw its first prompt. Used by "promote to pane" to run
+    ///     `cd "<cwd>" && <command>\n` in a fresh pane. Ignored when
+    ///     `skipInitialTab` is true.
+    init(paneID: UUID, skipInitialTab: Bool = false, initialInput: String? = nil) {
         self.paneID = paneID
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = Theme.background.cgColor
         setupTabBar()
         if !skipInitialTab {
-            addInitialTab()
+            addInitialTab(initialInput: initialInput)
         }
         setupDropDestination()
         applyGlassOrSolid()
@@ -214,12 +225,17 @@ class TerminalPane: NSView {
         ])
     }
 
-    private func addInitialTab() {
+    private func addInitialTab(initialInput: String? = nil) {
         let tabID = UUID()
         tabs.append(PaneTab(id: tabID))
         activeTabID = tabID
 
         let tv = makeTerminalView(tabID: tabID)
+        if let initialInput = initialInput, !initialInput.isEmpty {
+            // sendText buffers until the surface is created, then flushes after
+            // a short delay so the shell prompt is visible first.
+            tv.sendText(initialInput)
+        }
         addSubview(tv)
         refreshTabBar()
     }

@@ -44,6 +44,11 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
     /// Whether a surface has been created
     private var surfaceCreated = false
 
+    /// Text queued before the surface existed; flushed shortly after
+    /// createSurface(app:) succeeds. Used so callers can pre-type a command
+    /// (e.g. `docker exec -it X sh\n`) when spawning a new tab.
+    private var pendingText: String?
+
     /// Marked text for input method support
     private var markedText = NSMutableAttributedString()
 
@@ -144,6 +149,36 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
 
         // Set focus state
         ghostty_surface_set_focus(surface, isFocused)
+
+        // Flush text queued before the surface existed. Defer one tick so the
+        // shell's prompt has a chance to draw first.
+        if pendingText != nil {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                self?.flushPendingTextIfReady()
+            }
+        }
+    }
+
+    /// Write text directly to the PTY as if typed. Caller supplies any
+    /// trailing newline. Safe before the surface is ready: text is buffered
+    /// and flushed once the surface comes up.
+    func sendText(_ text: String) {
+        guard !text.isEmpty else { return }
+        if let surface = surface, surfaceCreated {
+            text.withCString { ptr in
+                ghostty_surface_text(surface, ptr, UInt(text.utf8.count))
+            }
+        } else {
+            pendingText = (pendingText ?? "") + text
+        }
+    }
+
+    private func flushPendingTextIfReady() {
+        guard let surface = surface, surfaceCreated, let text = pendingText, !text.isEmpty else { return }
+        pendingText = nil
+        text.withCString { ptr in
+            ghostty_surface_text(surface, ptr, UInt(text.utf8.count))
+        }
     }
 
     // MARK: - Focus Border

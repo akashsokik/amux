@@ -787,10 +787,36 @@ extension MainWindowController: EditorSidebarViewDelegate {
 // MARK: - RunnerPanelViewDelegate
 
 extension MainWindowController: RunnerPanelViewDelegate {
+    /// Promote a running runner task into a full Ghostty pane so the user gets
+    /// a real TUI / color / shell integration for dev servers, debuggers, etc.
+    ///
+    /// Flow:
+    /// 1. Split the currently-focused pane vertically so the new pane gets
+    ///    focus and lives next to where the user was working.
+    /// 2. Register the command as pending initial input for the new paneID so
+    ///    the `TerminalPane`/`GhosttyTerminalView` typing machinery feeds it
+    ///    to the shell after the prompt has drawn (`GhosttyTerminalView`
+    ///    defers the first PTY write ~0.3s to let the prompt paint first).
+    /// 3. Refresh the session so `SplitContainerView.createPane` runs and
+    ///    picks up the pending input.
+    ///
+    /// `RunnerPanelView.promoteClicked` is responsible for writing a
+    /// breadcrumb into the log buffer and calling `runner.stop(...)` BEFORE
+    /// invoking this delegate method, so the inline session is gone by the
+    /// time the pane starts.
     func runnerPanelDidRequestOpenInPane(command: String, cwd: String) {
-        // TODO: Task 17 — implement promote-to-pane
-        _ = command
-        _ = cwd
+        guard let session = sessionManager.activeSession else { return }
+        guard let newPaneID = session.splitFocusedPane(direction: .vertical) else { return }
+
+        // Single PTY write: cd first so we land in the right dir even if the
+        // shell spawned elsewhere, then run the user's command. Quote cwd to
+        // handle spaces; backslash-escape embedded double quotes.
+        let escapedCwd = cwd.replacingOccurrences(of: "\"", with: "\\\"")
+        let line = "cd \"\(escapedCwd)\" && \(command)\n"
+        splitContainerView.registerInitialInput(line, for: newPaneID)
+
+        displaySession(session)
+        splitContainerView.focusPane(newPaneID)
     }
 }
 

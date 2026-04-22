@@ -17,6 +17,12 @@ class SplitContainerView: NSView {
     /// Divider views keyed by the split container node ID.
     private var dividerViews: [UUID: DividerView] = [:]
 
+    /// Text to feed into the shell of a not-yet-created pane, keyed by pane ID.
+    /// Consumed by `createPane(id:)` on first creation, then removed. Used by
+    /// "promote runner task to pane" so the controller can pre-register the
+    /// command for the fresh pane before asking the tree to display.
+    private var pendingInitialInputs: [UUID: String] = [:]
+
     /// Cache of pane views per session, so terminals survive session switches.
     private var sessionPaneCache: [UUID: [UUID: TerminalPane]] = [:]
     /// The session ID currently being displayed.
@@ -290,12 +296,20 @@ class SplitContainerView: NSView {
 
     func createPane(id: UUID) -> TerminalPane {
         print("[SplitContainer] CREATE pane \(String(id.uuidString.prefix(4)))")
-        let pane = TerminalPane(paneID: id)
+        let initialInput = pendingInitialInputs.removeValue(forKey: id)
+        let pane = TerminalPane(paneID: id, initialInput: initialInput)
         pane.isFocused = (id == focusedPaneID)
         pane.delegate = self
         paneViews[id] = pane
         containerDelegate?.splitContainerView(self, didCreatePane: pane)
         return pane
+    }
+
+    /// Register text to be typed into the shell of a pane that has not yet
+    /// been created. Must be called BEFORE `setSplitTree(_:forSessionID:)` /
+    /// `displaySession(_:)` triggers `createPane(id:)` for this pane.
+    func registerInitialInput(_ text: String, for paneID: UUID) {
+        pendingInitialInputs[paneID] = text
     }
 
     func removePane(id: UUID) {

@@ -693,6 +693,18 @@ final class RunnerPanelView: NSView {
             }
             return worktreePath
         }()
+
+        // Leave a breadcrumb in the log buffer BEFORE stopping so the user
+        // can scroll the inline log later and see where the run went. Only
+        // do this if there's actually a session; a never-started task has
+        // nothing to annotate.
+        if let session = runner.session(for: id) {
+            let formatter = DateFormatter()
+            formatter.dateFormat = "HH:mm:ss"
+            session.buffer.append("Promoted to pane at \(formatter.string(from: Date()))\n")
+            runner.stop(id: id)
+        }
+
         delegate?.runnerPanelDidRequestOpenInPane(command: task.command, cwd: cwd)
     }
 
