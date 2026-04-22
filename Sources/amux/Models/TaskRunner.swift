@@ -9,55 +9,69 @@ enum TaskStatus: Equatable {
 
 final class TaskRunSession {
     let taskId: String
+    let worktreePath: String
     let startedAt: Date
     let buffer: LogRingBuffer
     fileprivate(set) var status: TaskStatus = .running
     fileprivate(set) var pid: pid_t?
     fileprivate let process: Process
 
-    init(taskId: String, buffer: LogRingBuffer, process: Process) {
+    init(taskId: String, worktreePath: String, buffer: LogRingBuffer, process: Process) {
         self.taskId = taskId
+        self.worktreePath = worktreePath
         self.startedAt = Date()
         self.buffer = buffer
         self.process = process
     }
 }
 
+/// Composite key scoping a task session to a specific worktree. Auto-detected
+/// task ids like "npm:dev" are NOT unique across worktrees, so keying sessions
+/// on taskId alone caused worktree A's running task to appear running in
+/// worktree B. The worktreePath disambiguates.
+struct TaskSessionKey: Hashable {
+    let worktreePath: String
+    let taskId: String
+}
+
 final class TaskRunner {
     static let didUpdateNotification = Notification.Name("TaskRunnerDidUpdate")
 
-    private var sessions: [String: TaskRunSession] = [:]
+    private var sessions: [TaskSessionKey: TaskRunSession] = [:]
     private let queue = DispatchQueue(label: "amux.TaskRunner")
 
-    func session(for id: String) -> TaskRunSession? {
-        queue.sync { sessions[id] }
+    func session(for id: String, worktreePath: String) -> TaskRunSession? {
+        let key = TaskSessionKey(worktreePath: worktreePath, taskId: id)
+        return queue.sync { sessions[key] }
     }
 
     func start(_ task: RunnerTask, worktreePath: String) {
+        let key = TaskSessionKey(worktreePath: worktreePath, taskId: task.id)
         queue.sync {
-            if let existing = sessions[task.id], existing.status == .running {
-                _stopLocked(id: task.id)
+            if let existing = sessions[key], existing.status == .running {
+                _stopLocked(key: key)
             }
             guard let session = _spawnLocked(task: task, worktreePath: worktreePath) else { return }
-            sessions[task.id] = session
+            sessions[key] = session
         }
-        postUpdate(id: task.id)
+        postUpdate(taskId: task.id, worktreePath: worktreePath)
     }
 
     func restart(_ task: RunnerTask, worktreePath: String) {
-        stop(id: task.id)
+        stop(id: task.id, worktreePath: worktreePath)
         DispatchQueue.global().asyncAfter(deadline: .now() + .milliseconds(300)) { [weak self] in
             self?.start(task, worktreePath: worktreePath)
         }
     }
 
-    func stop(id: String) {
-        queue.sync { _stopLocked(id: id) }
-        postUpdate(id: id)
+    func stop(id: String, worktreePath: String) {
+        let key = TaskSessionKey(worktreePath: worktreePath, taskId: id)
+        queue.sync { _stopLocked(key: key) }
+        postUpdate(taskId: id, worktreePath: worktreePath)
     }
 
-    private func _stopLocked(id: String) {
-        guard let session = sessions[id], session.status == .running,
+    private func _stopLocked(key: TaskSessionKey) {
+        guard let session = sessions[key], session.status == .running,
               session.pid != nil else { return }
         // Fallback path: Process.startsNewProcessGroupWhenSet isn't available in this
         // Swift toolchain, so the child shares our process group. Send SIGTERM via
@@ -67,7 +81,7 @@ final class TaskRunner {
         DispatchQueue.global().asyncAfter(deadline: .now() + 3.0) { [weak self] in
             guard let self else { return }
             self.queue.sync {
-                if let s = self.sessions[id], s.status == .running, let p = s.pid {
+                if let s = self.sessions[key], s.status == .running, let p = s.pid {
                     kill(p, SIGKILL)
                 }
             }
@@ -103,7 +117,13 @@ final class TaskRunner {
         // escalation in _stopLocked. Grandchildren may leak; acceptable for v1.
 
         let buffer = LogRingBuffer()
-        let session = TaskRunSession(taskId: task.id, buffer: buffer, process: process)
+        let session = TaskRunSession(
+            taskId: task.id, worktreePath: worktreePath,
+            buffer: buffer, process: process
+        )
+
+        let capturedTaskId = task.id
+        let capturedWorktreePath = worktreePath
 
         stdout.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
@@ -112,7 +132,7 @@ final class TaskRunner {
                 buffer.append(ANSIStripper.strip(s))
                 NotificationCenter.default.post(
                     name: TaskRunner.didUpdateNotification, object: nil,
-                    userInfo: ["taskId": task.id]
+                    userInfo: ["taskId": capturedTaskId, "worktreePath": capturedWorktreePath]
                 )
             }
         }
@@ -123,7 +143,7 @@ final class TaskRunner {
                 buffer.append(ANSIStripper.strip(s))
                 NotificationCenter.default.post(
                     name: TaskRunner.didUpdateNotification, object: nil,
-                    userInfo: ["taskId": task.id]
+                    userInfo: ["taskId": capturedTaskId, "worktreePath": capturedWorktreePath]
                 )
             }
         }
@@ -138,7 +158,10 @@ final class TaskRunner {
                 }
                 NotificationCenter.default.post(
                     name: TaskRunner.didUpdateNotification, object: nil,
-                    userInfo: ["taskId": capturedSession.taskId]
+                    userInfo: [
+                        "taskId": capturedSession.taskId,
+                        "worktreePath": capturedSession.worktreePath,
+                    ]
                 )
             }
             stdout.fileHandleForReading.readabilityHandler = nil
@@ -156,10 +179,10 @@ final class TaskRunner {
         }
     }
 
-    private func postUpdate(id: String) {
+    private func postUpdate(taskId: String, worktreePath: String) {
         NotificationCenter.default.post(
             name: Self.didUpdateNotification, object: nil,
-            userInfo: ["taskId": id]
+            userInfo: ["taskId": taskId, "worktreePath": worktreePath]
         )
     }
 }
