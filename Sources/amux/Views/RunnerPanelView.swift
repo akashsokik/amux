@@ -58,6 +58,12 @@ final class RunnerPanelView: NSView {
     private var refreshButton: DimIconButton!
     private var addButton: DimIconButton!
 
+    // Invalid-tasks.json banner (red, hidden unless store.loadError != nil).
+    private var errorBanner: NSView!
+    private var errorBannerLabel: NSTextField!
+    private var errorBannerButton: NSButton!
+    private var errorBannerHeight: NSLayoutConstraint!
+
     // Split view hosting outline (top) + log panel (bottom).
     private var splitView: NSSplitView!
     private var didSetInitialSplitPosition = false
@@ -151,6 +157,7 @@ final class RunnerPanelView: NSView {
             }
         }
         refreshEmptyState()
+        refreshErrorBanner()
     }
 
     // MARK: - Setup
@@ -231,6 +238,35 @@ final class RunnerPanelView: NSView {
         headerRow.addSubview(refreshButton)
         headerRow.addSubview(addButton)
 
+        // Error banner: red-tinted row that appears when tasks.json fails to
+        // parse. Built here so the split-view constraints below can pin to it.
+        errorBanner = NSView()
+        errorBanner.translatesAutoresizingMaskIntoConstraints = false
+        errorBanner.wantsLayer = true
+        errorBanner.layer?.backgroundColor = NSColor.systemRed.withAlphaComponent(0.15).cgColor
+        errorBanner.isHidden = true
+        addSubview(errorBanner)
+
+        errorBannerLabel = NSTextField(labelWithString: "")
+        errorBannerLabel.translatesAutoresizingMaskIntoConstraints = false
+        errorBannerLabel.font = Theme.Fonts.body(size: 11)
+        errorBannerLabel.textColor = Theme.primaryText
+        errorBannerLabel.isBezeled = false
+        errorBannerLabel.isEditable = false
+        errorBannerLabel.isSelectable = false
+        errorBannerLabel.backgroundColor = .clear
+        errorBannerLabel.lineBreakMode = .byTruncatingTail
+        errorBannerLabel.maximumNumberOfLines = 1
+        errorBanner.addSubview(errorBannerLabel)
+
+        errorBannerButton = NSButton(title: "Edit file", target: self, action: #selector(editTasksFileClicked))
+        errorBannerButton.translatesAutoresizingMaskIntoConstraints = false
+        errorBannerButton.bezelStyle = .rounded
+        errorBannerButton.controlSize = .small
+        errorBannerButton.setContentHuggingPriority(.required, for: .horizontal)
+        errorBannerButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+        errorBanner.addSubview(errorBannerButton)
+
         // Split view wraps both halves.
         splitView = NSSplitView()
         splitView.translatesAutoresizingMaskIntoConstraints = false
@@ -242,9 +278,11 @@ final class RunnerPanelView: NSView {
         splitView.setHoldingPriority(NSLayoutConstraint.Priority(251), forSubviewAt: 0)
         addSubview(splitView)
 
-        // Header row sits at top; split view begins below it.
+        // Header row sits at top; banner sits below it (0-height when hidden);
+        // split view begins below the banner.
         let scrollTop = headerRow.topAnchor.constraint(equalTo: topAnchor, constant: topContentInset)
         scrollTopConstraint = scrollTop
+        errorBannerHeight = errorBanner.heightAnchor.constraint(equalToConstant: 0)
         NSLayoutConstraint.activate([
             scrollTop,
             headerRow.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -264,7 +302,19 @@ final class RunnerPanelView: NSView {
             refreshButton.widthAnchor.constraint(equalToConstant: 20),
             refreshButton.heightAnchor.constraint(equalToConstant: 20),
 
-            splitView.topAnchor.constraint(equalTo: headerRow.bottomAnchor),
+            errorBanner.topAnchor.constraint(equalTo: headerRow.bottomAnchor),
+            errorBanner.leadingAnchor.constraint(equalTo: leadingAnchor),
+            errorBanner.trailingAnchor.constraint(equalTo: trailingAnchor),
+            errorBannerHeight,
+
+            errorBannerButton.trailingAnchor.constraint(equalTo: errorBanner.trailingAnchor, constant: -8),
+            errorBannerButton.centerYAnchor.constraint(equalTo: errorBanner.centerYAnchor),
+
+            errorBannerLabel.leadingAnchor.constraint(equalTo: errorBanner.leadingAnchor, constant: 10),
+            errorBannerLabel.centerYAnchor.constraint(equalTo: errorBanner.centerYAnchor),
+            errorBannerLabel.trailingAnchor.constraint(lessThanOrEqualTo: errorBannerButton.leadingAnchor, constant: -8),
+
+            splitView.topAnchor.constraint(equalTo: errorBanner.bottomAnchor),
             splitView.leadingAnchor.constraint(equalTo: leadingAnchor),
             splitView.trailingAnchor.constraint(equalTo: trailingAnchor),
             splitView.bottomAnchor.constraint(equalTo: bottomAnchor),
@@ -282,9 +332,10 @@ final class RunnerPanelView: NSView {
         emptyLabel.backgroundColor = .clear
         addSubview(emptyLabel)
 
-        // Empty label sits below the header so it never covers the + button.
+        // Empty label sits below the banner so it never covers the + button
+        // or overlaps the error row.
         NSLayoutConstraint.activate([
-            emptyLabel.topAnchor.constraint(equalTo: headerRow.bottomAnchor, constant: 10),
+            emptyLabel.topAnchor.constraint(equalTo: errorBanner.bottomAnchor, constant: 10),
             emptyLabel.centerXAnchor.constraint(equalTo: centerXAnchor),
             emptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: leadingAnchor, constant: 10),
             emptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -10),
@@ -292,6 +343,7 @@ final class RunnerPanelView: NSView {
 
         applyGlassOrSolid()
         refreshEmptyState()
+        refreshErrorBanner()
         refreshLogPanel(replaceContents: true)
     }
 
@@ -512,6 +564,7 @@ final class RunnerPanelView: NSView {
                 if let item = self.groupItems[src] { self.outlineView.expandItem(item) }
             }
             self.refreshEmptyState()
+            self.refreshErrorBanner()
             // Clear stale selection if the task is gone.
             if let sel = self.selectedTaskID, self.taskItems[sel] == nil {
                 self.selectedTaskID = nil
@@ -653,6 +706,42 @@ final class RunnerPanelView: NSView {
             session.buffer.clear()
         }
         logTextView?.string = ""
+    }
+
+    // MARK: - Error banner
+
+    /// Show/hide the red banner based on `store?.loadError`. Collapsing the
+    /// height to 0 when hidden keeps the split view flush against the header
+    /// — we don't want a ghost gap when everything is fine.
+    private func refreshErrorBanner() {
+        guard errorBanner != nil else { return }
+        if let msg = store?.loadError {
+            errorBannerLabel.stringValue = msg
+            errorBannerLabel.toolTip = msg
+            errorBanner.isHidden = false
+            errorBannerHeight.constant = 32
+        } else {
+            errorBannerLabel.stringValue = ""
+            errorBannerLabel.toolTip = nil
+            errorBanner.isHidden = true
+            errorBannerHeight.constant = 0
+        }
+    }
+
+    @objc private func editTasksFileClicked() {
+        guard let store else { return }
+        let url = URL(fileURLWithPath: store.worktreePath)
+            .appendingPathComponent(".amux")
+            .appendingPathComponent("tasks.json")
+        if FileManager.default.fileExists(atPath: url.path) {
+            NSWorkspace.shared.open(url)
+        } else {
+            // Open the parent `.amux/` so Finder has something to show. Create
+            // it first so the open call has a real target.
+            let parent = url.deletingLastPathComponent()
+            try? FileManager.default.createDirectory(at: parent, withIntermediateDirectories: true)
+            NSWorkspace.shared.open(parent)
+        }
     }
 
     // MARK: - Header actions
