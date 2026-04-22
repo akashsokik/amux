@@ -18,8 +18,9 @@ class MainWindowController: NSWindowController {
     private var sidebarLeadingConstraint: NSLayoutConstraint!
     private var resizeHandle: SidebarResizeHandle!
 
-    // Right sidebar (tabbed: editor + git). Replaces the previous two panels.
+    // Right sidebar (tabbed: editor + git + runner). Replaces the previous two panels.
     private(set) var rightSidebarView: RightSidebarView!
+    private(set) var runnerPanelView: RunnerPanelView!
     var editorSidebarView: EditorSidebarView { rightSidebarView.editorSidebarView }
     var gitPanelView: GitPanelView { rightSidebarView.gitPanelView }
     private var rightSidebarWidthConstraint: NSLayoutConstraint!
@@ -188,10 +189,13 @@ class MainWindowController: NSWindowController {
         let gitPanel = GitPanelView(frame: .zero)
         gitPanel.delegate = self
 
+        runnerPanelView = RunnerPanelView()
+        runnerPanelView.delegate = self
+
         rightSidebarView = RightSidebarView(
             editorSidebarView: editorSidebar,
             gitPanelView: gitPanel,
-            runnerPanelView: RunnerPanelView()
+            runnerPanelView: runnerPanelView
         )
         rightSidebarView.translatesAutoresizingMaskIntoConstraints = false
         rightSidebarView.delegate = self
@@ -495,6 +499,29 @@ class MainWindowController: NSWindowController {
         if isSidebarVisible {
             sidebarView.reloadSessions()
         }
+
+        rebindRunnerWorktree()
+    }
+
+    // MARK: - Runner worktree binding
+
+    /// Resolve the currently-focused pane's working directory, normalized to
+    /// the enclosing repo root when the cwd is inside a git worktree.
+    /// Falls back to `NSHomeDirectory()` when the pane has no cwd yet, and
+    /// returns nil only when there is no active session or focused pane.
+    private func activeWorktreePath() -> String? {
+        guard let session = sessionManager.activeSession,
+              let focusedID = session.focusedPaneID,
+              let pane = splitContainerView.pane(for: focusedID) else { return nil }
+        let cwd = pane.currentDirectory ?? NSHomeDirectory()
+        return GitHelper.repoRoot(from: cwd) ?? cwd
+    }
+
+    /// Rebind the runner panel to whatever worktree the focused pane is in.
+    /// Safe to call before setupViews finishes — no-ops until the view exists.
+    func rebindRunnerWorktree() {
+        guard runnerPanelView != nil else { return }
+        runnerPanelView.setWorktree(activeWorktreePath())
     }
 }
 
@@ -652,6 +679,9 @@ extension MainWindowController: SidebarViewDelegate {
                 pane.focus()
             }
             sidebarView.reloadSessions()
+            // Focused pane id changed after displaySession; re-bind runner
+            // to pick up the new pane's worktree.
+            rebindRunnerWorktree()
         }
     }
 
@@ -751,6 +781,16 @@ extension MainWindowController: EditorSidebarViewDelegate {
             rightSidebarWidth = targetWidth
             contentView.layoutSubtreeIfNeeded()
         }
+    }
+}
+
+// MARK: - RunnerPanelViewDelegate
+
+extension MainWindowController: RunnerPanelViewDelegate {
+    func runnerPanelDidRequestOpenInPane(command: String, cwd: String) {
+        // TODO: Task 17 — implement promote-to-pane
+        _ = command
+        _ = cwd
     }
 }
 
