@@ -128,17 +128,17 @@ final class TaskRunner {
             }
         }
 
+        let capturedSession = session
         process.terminationHandler = { [weak self] p in
             self?.queue.async {
-                guard let self, let s = self.sessions[task.id] else { return }
                 switch p.terminationReason {
-                case .exit:        s.status = .exited(p.terminationStatus)
-                case .uncaughtSignal: s.status = .terminated
-                @unknown default:  s.status = .terminated
+                case .exit:        capturedSession.status = .exited(p.terminationStatus)
+                case .uncaughtSignal: capturedSession.status = .terminated
+                @unknown default:  capturedSession.status = .terminated
                 }
                 NotificationCenter.default.post(
                     name: TaskRunner.didUpdateNotification, object: nil,
-                    userInfo: ["taskId": task.id]
+                    userInfo: ["taskId": capturedSession.taskId]
                 )
             }
             stdout.fileHandleForReading.readabilityHandler = nil
