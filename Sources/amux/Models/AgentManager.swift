@@ -26,7 +26,14 @@ class AgentManager {
     /// All tracked shells, updated externally each poll cycle.
     var shellEntries: [ShellEntry] = []
 
-    private static let knownAgents: [String: AgentType] = ["claude": .claudeCode, "codex": .codex]
+    // Claude Code now ships as a Bun single-binary named `claude.exe`; older
+    // node-based installs still report `claude`.
+    private static let knownAgents: [String: AgentType] = [
+        "claude": .claudeCode,
+        "claude.exe": .claudeCode,
+        "codex": .codex,
+        "codex.exe": .codex,
+    ]
 
     init(sessionManager: SessionManager) {
         self.sessionManager = sessionManager

@@ -203,4 +203,247 @@ enum GitHelper {
         }
         return result
     }
+
+    // MARK: - Detailed command runner (returns stdout + stderr + exit)
+
+    struct CommandResult {
+        let stdout: String
+        let stderr: String
+        let exitCode: Int32
+        var succeeded: Bool { exitCode == 0 }
+    }
+
+    /// Run any git command and capture stdout/stderr plus the exit code.
+    static func runDetailed(_ args: [String], in directory: String) -> CommandResult {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+        process.arguments = args
+        process.currentDirectoryURL = URL(fileURLWithPath: directory)
+
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+
+        do {
+            try process.run()
+        } catch {
+            return CommandResult(stdout: "", stderr: "\(error)", exitCode: -1)
+        }
+
+        let outData = outPipe.fileHandleForReading.readDataToEndOfFile()
+        let errData = errPipe.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+
+        return CommandResult(
+            stdout: String(data: outData, encoding: .utf8) ?? "",
+            stderr: String(data: errData, encoding: .utf8) ?? "",
+            exitCode: process.terminationStatus
+        )
+    }
+
+    /// Broadcast that a write operation finished so any open views can refresh.
+    private static func broadcastFinish() {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(name: commandDidFinishNotification, object: nil)
+        }
+    }
+
+    // MARK: - Branches
+
+    struct BranchInfo {
+        let name: String
+        let isCurrent: Bool
+        let isRemote: Bool
+        let upstream: String?
+    }
+
+    static func listBranches(from cwd: String) -> [BranchInfo] {
+        var result: [BranchInfo] = []
+
+        // Local branches
+        let localFormat = "%(refname:short)\t%(HEAD)\t%(upstream:short)"
+        if let out = run(["for-each-ref", "--format=\(localFormat)", "refs/heads"], in: cwd) {
+            for line in out.components(separatedBy: "\n") where !line.isEmpty {
+                let parts = line.components(separatedBy: "\t")
+                guard parts.count >= 2 else { continue }
+                let name = parts[0]
+                let isCurrent = parts[1] == "*"
+                let upstream = parts.count > 2 && !parts[2].isEmpty ? parts[2] : nil
+                result.append(BranchInfo(name: name, isCurrent: isCurrent, isRemote: false, upstream: upstream))
+            }
+        }
+
+        // Remote branches (skip HEAD aliases)
+        if let out = run(["for-each-ref", "--format=%(refname:short)", "refs/remotes"], in: cwd) {
+            for line in out.components(separatedBy: "\n") where !line.isEmpty {
+                if line.hasSuffix("/HEAD") { continue }
+                result.append(BranchInfo(name: line, isCurrent: false, isRemote: true, upstream: nil))
+            }
+        }
+
+        return result
+    }
+
+    static func checkoutBranch(from cwd: String, branch: String) -> Result<Void, GitError> {
+        let res = runDetailed(["checkout", branch], in: cwd)
+        broadcastFinish()
+        if res.succeeded { return .success(()) }
+        return .failure(GitError(res.stderr.isEmpty ? "Checkout failed" : res.stderr))
+    }
+
+    static func createBranch(from cwd: String, name: String, checkout: Bool) -> Result<Void, GitError> {
+        let args: [String] = checkout ? ["checkout", "-b", name] : ["branch", name]
+        let res = runDetailed(args, in: cwd)
+        broadcastFinish()
+        if res.succeeded { return .success(()) }
+        return .failure(GitError(res.stderr.isEmpty ? "Branch create failed" : res.stderr))
+    }
+
+    // MARK: - Staging
+
+    static func stage(from cwd: String, paths: [String]) -> Result<Void, GitError> {
+        guard !paths.isEmpty else { return .success(()) }
+        let res = runDetailed(["add", "--"] + paths, in: cwd)
+        broadcastFinish()
+        if res.succeeded { return .success(()) }
+        return .failure(GitError(res.stderr.isEmpty ? "Stage failed" : res.stderr))
+    }
+
+    static func stageAll(from cwd: String) -> Result<Void, GitError> {
+        let res = runDetailed(["add", "-A"], in: cwd)
+        broadcastFinish()
+        if res.succeeded { return .success(()) }
+        return .failure(GitError(res.stderr.isEmpty ? "Stage all failed" : res.stderr))
+    }
+
+    static func unstage(from cwd: String, paths: [String]) -> Result<Void, GitError> {
+        guard !paths.isEmpty else { return .success(()) }
+        let res = runDetailed(["restore", "--staged", "--"] + paths, in: cwd)
+        broadcastFinish()
+        if res.succeeded { return .success(()) }
+        return .failure(GitError(res.stderr.isEmpty ? "Unstage failed" : res.stderr))
+    }
+
+    /// Discard working-tree changes. For untracked files this removes them from disk.
+    static func discard(from cwd: String, paths: [String], includeUntracked: Bool) -> Result<Void, GitError> {
+        guard !paths.isEmpty else { return .success(()) }
+        let restore = runDetailed(["checkout", "--"] + paths, in: cwd)
+        if !restore.succeeded && !includeUntracked {
+            broadcastFinish()
+            return .failure(GitError(restore.stderr.isEmpty ? "Discard failed" : restore.stderr))
+        }
+        if includeUntracked {
+            _ = runDetailed(["clean", "-f", "--"] + paths, in: cwd)
+        }
+        broadcastFinish()
+        return .success(())
+    }
+
+    // MARK: - Commit / sync
+
+    static func commit(from cwd: String, message: String) -> Result<Void, GitError> {
+        let trimmed = message.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return .failure(GitError("Commit message is empty")) }
+        let res = runDetailed(["commit", "-m", trimmed], in: cwd)
+        broadcastFinish()
+        if res.succeeded { return .success(()) }
+        let msg = res.stderr.isEmpty ? res.stdout : res.stderr
+        return .failure(GitError(msg.isEmpty ? "Commit failed" : msg))
+    }
+
+    static func pull(from cwd: String) -> Result<String, GitError> {
+        let res = runDetailed(["pull", "--ff-only"], in: cwd)
+        broadcastFinish()
+        if res.succeeded { return .success(res.stdout) }
+        return .failure(GitError(res.stderr.isEmpty ? "Pull failed" : res.stderr))
+    }
+
+    static func push(from cwd: String) -> Result<String, GitError> {
+        let res = runDetailed(["push"], in: cwd)
+        broadcastFinish()
+        if res.succeeded { return .success(res.stdout.isEmpty ? res.stderr : res.stdout) }
+        return .failure(GitError(res.stderr.isEmpty ? "Push failed" : res.stderr))
+    }
+
+    static func pushSetUpstream(from cwd: String, branch: String) -> Result<String, GitError> {
+        let res = runDetailed(["push", "-u", "origin", branch], in: cwd)
+        broadcastFinish()
+        if res.succeeded { return .success(res.stdout.isEmpty ? res.stderr : res.stdout) }
+        return .failure(GitError(res.stderr.isEmpty ? "Push failed" : res.stderr))
+    }
+
+    // MARK: - History
+
+    struct CommitInfo {
+        let hash: String
+        let shortHash: String
+        let subject: String
+        let authorName: String
+        let relativeDate: String
+        let refs: [String]
+    }
+
+    static func log(from cwd: String, limit: Int = 100) -> [CommitInfo] {
+        // Separator sequences chosen to be extremely unlikely to appear in commit data.
+        let fieldSep = "\u{1F}"
+        let recordSep = "\u{1E}"
+        let format = ["%H", "%h", "%s", "%an", "%ar", "%D"].joined(separator: fieldSep) + recordSep
+
+        guard let out = run(
+            ["log", "--all", "-n", "\(limit)", "--pretty=format:\(format)"],
+            in: cwd
+        ) else { return [] }
+
+        var commits: [CommitInfo] = []
+        for record in out.components(separatedBy: recordSep) {
+            let trimmed = record.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let fields = trimmed.components(separatedBy: fieldSep)
+            guard fields.count >= 6 else { continue }
+            let refs = fields[5]
+                .components(separatedBy: ",")
+                .map { $0.trimmingCharacters(in: .whitespaces) }
+                .filter { !$0.isEmpty }
+            commits.append(CommitInfo(
+                hash: fields[0],
+                shortHash: fields[1],
+                subject: fields[2],
+                authorName: fields[3],
+                relativeDate: fields[4],
+                refs: refs
+            ))
+        }
+        return commits
+    }
+
+    // MARK: - Pull request (via gh CLI)
+
+    /// Open a PR creation flow in the browser using `gh pr create --web`.
+    /// Returns .failure if gh is not installed or the command fails.
+    static func openPullRequestInBrowser(from cwd: String) -> Result<Void, GitError> {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/env")
+        process.arguments = ["gh", "pr", "create", "--web"]
+        process.currentDirectoryURL = URL(fileURLWithPath: cwd)
+
+        let outPipe = Pipe()
+        let errPipe = Pipe()
+        process.standardOutput = outPipe
+        process.standardError = errPipe
+
+        do {
+            try process.run()
+        } catch {
+            return .failure(GitError("Unable to launch gh: \(error)"))
+        }
+
+        process.waitUntilExit()
+        let err = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+        if process.terminationStatus == 0 { return .success(()) }
+        if err.contains("command not found") || err.contains("No such file") {
+            return .failure(GitError("The GitHub CLI ('gh') is not installed. Install it from https://cli.github.com"))
+        }
+        return .failure(GitError(err.isEmpty ? "gh pr create failed" : err))
+    }
 }

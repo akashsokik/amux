@@ -4,7 +4,6 @@ import CGhostty
 private extension NSToolbarItem.Identifier {
     static let sidebarToggle = NSToolbarItem.Identifier("sidebarToggle")
     static let flexSpace = NSToolbarItem.Identifier.flexibleSpace
-    static let editorToggle = NSToolbarItem.Identifier("editorToggle")
     static let actions = NSToolbarItem.Identifier("actions")
 }
 
@@ -19,18 +18,24 @@ class MainWindowController: NSWindowController {
     private var sidebarLeadingConstraint: NSLayoutConstraint!
     private var resizeHandle: SidebarResizeHandle!
 
-    // Editor sidebar (right side, mirrors left sidebar pattern)
-    private(set) var editorSidebarView: EditorSidebarView!
-    private var editorSidebarWidthConstraint: NSLayoutConstraint!
-    private var editorSidebarTrailingConstraint: NSLayoutConstraint!
-    private var editorResizeHandle: SidebarResizeHandle!
+    // Right sidebar (tabbed: editor + git). Replaces the previous two panels.
+    private(set) var rightSidebarView: RightSidebarView!
+    var editorSidebarView: EditorSidebarView { rightSidebarView.editorSidebarView }
+    var gitPanelView: GitPanelView { rightSidebarView.gitPanelView }
+    private var rightSidebarWidthConstraint: NSLayoutConstraint!
+    private var rightSidebarTrailingConstraint: NSLayoutConstraint!
+    private var rightSidebarResizeHandle: SidebarResizeHandle!
 
-    private(set) var isEditorSidebarVisible = false
+    private(set) var isRightSidebarVisible = false
     private(set) var isEditorExpanded = false
-    private var editorSidebarWidth: CGFloat = 420
-    private var editorSidebarWidthBeforeExpand: CGFloat = 420
-    private let minEditorSidebarWidth: CGFloat = 250
-    private let maxEditorSidebarWidth: CGFloat = 500
+    private var rightSidebarWidth: CGFloat = 460
+    private var rightSidebarWidthBeforeExpand: CGFloat = 460
+    private let minRightSidebarWidth: CGFloat = 320
+    private let maxRightSidebarWidth: CGFloat = 640
+
+    // Compatibility aliases so existing call sites keep working.
+    var isEditorSidebarVisible: Bool { isRightSidebarVisible && rightSidebarView.mode == .editor }
+    var isGitPanelVisible: Bool { isRightSidebarVisible && rightSidebarView.mode == .git }
 
     private let sessionManager: SessionManager
     private(set) var agentManager: AgentManager
@@ -177,17 +182,23 @@ class MainWindowController: NSWindowController {
         }
         contentView.addSubview(resizeHandle)
 
-        editorSidebarView = EditorSidebarView(frame: .zero)
-        editorSidebarView.translatesAutoresizingMaskIntoConstraints = false
-        editorSidebarView.delegate = self
-        contentView.addSubview(editorSidebarView)
+        let editorSidebar = EditorSidebarView(frame: .zero)
+        editorSidebar.delegate = self
 
-        editorResizeHandle = SidebarResizeHandle()
-        editorResizeHandle.translatesAutoresizingMaskIntoConstraints = false
-        editorResizeHandle.onResize = { [weak self] delta in
-            self?.resizeEditorSidebar(by: -delta)
+        let gitPanel = GitPanelView(frame: .zero)
+        gitPanel.delegate = self
+
+        rightSidebarView = RightSidebarView(editorSidebarView: editorSidebar, gitPanelView: gitPanel)
+        rightSidebarView.translatesAutoresizingMaskIntoConstraints = false
+        rightSidebarView.delegate = self
+        contentView.addSubview(rightSidebarView)
+
+        rightSidebarResizeHandle = SidebarResizeHandle()
+        rightSidebarResizeHandle.translatesAutoresizingMaskIntoConstraints = false
+        rightSidebarResizeHandle.onResize = { [weak self] delta in
+            self?.resizeRightSidebar(by: -delta)
         }
-        contentView.addSubview(editorResizeHandle)
+        contentView.addSubview(rightSidebarResizeHandle)
 
         // Glass background behind the titlebar/toolbar area (center region only).
         // Sidebars already extend to contentView.topAnchor with their own glass views,
@@ -209,13 +220,12 @@ class MainWindowController: NSWindowController {
         contentView.wantsLayer = true
         contentView.layer?.masksToBounds = true
 
-        // Right editor sidebar constraints (trailing edge, slides right to hide)
-        editorSidebarTrailingConstraint = editorSidebarView.trailingAnchor.constraint(
-            equalTo: contentView.trailingAnchor, constant: editorSidebarWidth
+        // Right sidebar: single container pins to contentView.trailing, slides right when hidden.
+        rightSidebarTrailingConstraint = rightSidebarView.trailingAnchor.constraint(
+            equalTo: contentView.trailingAnchor, constant: rightSidebarWidth
         )
-        editorSidebarWidthConstraint = editorSidebarView.widthAnchor.constraint(equalToConstant: editorSidebarWidth)
-        // Allow the width to yield to window size rather than forcing the window to grow
-        editorSidebarWidthConstraint.priority = .defaultHigh
+        rightSidebarWidthConstraint = rightSidebarView.widthAnchor.constraint(equalToConstant: rightSidebarWidth)
+        rightSidebarWidthConstraint.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
             // Left sidebar
@@ -230,33 +240,33 @@ class MainWindowController: NSWindowController {
             resizeHandle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             resizeHandle.widthAnchor.constraint(equalToConstant: 5),
 
-            // Right editor sidebar
-            editorSidebarTrailingConstraint,
-            editorSidebarWidthConstraint,
-            editorSidebarView.topAnchor.constraint(equalTo: contentView.topAnchor),
-            editorSidebarView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            // Right sidebar (unified editor + git tabs)
+            rightSidebarTrailingConstraint,
+            rightSidebarWidthConstraint,
+            rightSidebarView.topAnchor.constraint(equalTo: contentView.topAnchor),
+            rightSidebarView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
             // Right resize handle
-            editorResizeHandle.trailingAnchor.constraint(equalTo: editorSidebarView.leadingAnchor, constant: 2),
-            editorResizeHandle.topAnchor.constraint(equalTo: contentView.topAnchor),
-            editorResizeHandle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
-            editorResizeHandle.widthAnchor.constraint(equalToConstant: 5),
+            rightSidebarResizeHandle.trailingAnchor.constraint(equalTo: rightSidebarView.leadingAnchor, constant: 2),
+            rightSidebarResizeHandle.topAnchor.constraint(equalTo: contentView.topAnchor),
+            rightSidebarResizeHandle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
+            rightSidebarResizeHandle.widthAnchor.constraint(equalToConstant: 5),
 
             // Titlebar glass: spans the toolbar strip above the split container
             tbGlass.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor),
-            tbGlass.trailingAnchor.constraint(equalTo: editorSidebarView.leadingAnchor),
+            tbGlass.trailingAnchor.constraint(equalTo: rightSidebarView.leadingAnchor),
             tbGlass.topAnchor.constraint(equalTo: contentView.topAnchor),
             tbGlass.bottomAnchor.constraint(equalTo: layoutGuide.topAnchor),
 
-            // Split container: between the two sidebars
+            // Split container: between the left sidebar and the right sidebar
             splitContainerView.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor),
-            splitContainerView.trailingAnchor.constraint(equalTo: editorSidebarView.leadingAnchor),
+            splitContainerView.trailingAnchor.constraint(equalTo: rightSidebarView.leadingAnchor),
             splitContainerView.topAnchor.constraint(equalTo: layoutGuide.topAnchor),
             splitContainerView.bottomAnchor.constraint(equalTo: globalStatusBar.topAnchor),
 
-            // Status bar: between the two sidebars
+            // Status bar: between the left sidebar and the right sidebar
             globalStatusBar.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor),
-            globalStatusBar.trailingAnchor.constraint(equalTo: editorSidebarView.leadingAnchor),
+            globalStatusBar.trailingAnchor.constraint(equalTo: rightSidebarView.leadingAnchor),
             globalStatusBar.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             globalStatusBar.heightAnchor.constraint(equalToConstant: PaneStatusBar.barHeight),
         ])
@@ -271,47 +281,69 @@ class MainWindowController: NSWindowController {
         sidebarWidth = newWidth
     }
 
-    // MARK: - Editor sidebar resize
+    // MARK: - Right sidebar resize
 
-    private func resizeEditorSidebar(by delta: CGFloat) {
-        let newWidth = (editorSidebarWidthConstraint.constant + delta)
-            .clamped(to: minEditorSidebarWidth...maxEditorSidebarWidth)
-        editorSidebarWidthConstraint.constant = newWidth
-        editorSidebarWidth = newWidth
+    private func resizeRightSidebar(by delta: CGFloat) {
+        let newWidth = (rightSidebarWidthConstraint.constant + delta)
+            .clamped(to: minRightSidebarWidth...maxRightSidebarWidth)
+        rightSidebarWidthConstraint.constant = newWidth
+        rightSidebarWidth = newWidth
     }
 
-    // MARK: - Editor sidebar toggle (mirrors left sidebar pattern)
+    // MARK: - Right sidebar toggle
 
-    func toggleEditorSidebar() {
-        isEditorSidebarVisible.toggle()
-
-        // Clamp width so the sidebar never overflows the window
-        if isEditorSidebarVisible, let contentView = window?.contentView {
-            let leftEdge: CGFloat = isSidebarVisible ? sidebarWidth : 0
-            let minTerminalWidth: CGFloat = 200
-            let available = contentView.bounds.width - leftEdge - minTerminalWidth
-            let clamped = editorSidebarWidth.clamped(to: minEditorSidebarWidth...max(minEditorSidebarWidth, available))
-            editorSidebarWidthConstraint.constant = clamped
-            editorSidebarWidth = clamped
+    /// Shows or hides the unified right sidebar. `mode`, if provided, forces
+    /// a specific tab so the palette-level "Toggle Editor" / "Toggle Git"
+    /// commands land on the right content.
+    func toggleRightSidebar(showingMode mode: RightSidebarMode? = nil) {
+        if let mode = mode, isRightSidebarVisible, rightSidebarView.mode != mode {
+            // Already open on the other tab — just switch tabs, don't collapse.
+            rightSidebarView.setMode(mode)
+            if mode == .git {
+                rightSidebarView.gitPanelView.refresh(cwd: sidebarCurrentDirectory())
+            }
+            return
         }
 
-        // Mirror of left sidebar: 0 = visible, +editorSidebarWidth = off-screen right
-        let targetTrailing: CGFloat = isEditorSidebarVisible ? 0 : editorSidebarWidth
+        isRightSidebarVisible.toggle()
+
+        if isRightSidebarVisible {
+            if let mode = mode { rightSidebarView.setMode(mode) }
+
+            if let contentView = window?.contentView {
+                let leftEdge: CGFloat = isSidebarVisible ? sidebarWidth : 0
+                let minTerminalWidth: CGFloat = 200
+                let available = contentView.bounds.width - leftEdge - minTerminalWidth
+                let clamped = rightSidebarWidth.clamped(to: minRightSidebarWidth...max(minRightSidebarWidth, available))
+                rightSidebarWidthConstraint.constant = clamped
+                rightSidebarWidth = clamped
+            }
+
+            if rightSidebarView.mode == .git {
+                rightSidebarView.gitPanelView.refresh(cwd: sidebarCurrentDirectory())
+            }
+        }
+
+        let targetTrailing: CGFloat = isRightSidebarVisible ? 0 : rightSidebarWidth
 
         GhosttyTerminalView.deferSurfaceResize = true
-        if Theme.useVibrancy { editorSidebarView.setGlassHidden(true) }
+        if Theme.useVibrancy { rightSidebarView.setGlassHidden(true) }
         NSAnimationContext.runAnimationGroup({ context in
             context.duration = Theme.Animation.standard
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
 
-            editorSidebarTrailingConstraint.animator().constant = targetTrailing
+            rightSidebarTrailingConstraint.animator().constant = targetTrailing
             window?.contentView?.layoutSubtreeIfNeeded()
         }, completionHandler: {
             GhosttyTerminalView.deferSurfaceResize = false
             self.splitContainerView.needsLayout = true
-            if Theme.useVibrancy { self.editorSidebarView.setGlassHidden(false) }
+            if Theme.useVibrancy { self.rightSidebarView.setGlassHidden(false) }
         })
     }
+
+    // Back-compat shims so menu/palette actions keep working.
+    func toggleEditorSidebar() { toggleRightSidebar(showingMode: .editor) }
+    func toggleGitPanel() { toggleRightSidebar(showingMode: .git) }
 
     // MARK: - Sidebar toggle
 
@@ -345,7 +377,11 @@ class MainWindowController: NSWindowController {
     }
 
     @objc private func toolbarToggleEditorSidebar(_ sender: Any?) {
-        toggleEditorSidebar()
+        toggleRightSidebar()
+    }
+
+    @objc private func toolbarToggleGitPanel(_ sender: Any?) {
+        toggleRightSidebar(showingMode: .git)
     }
 
     @objc private func toolbarNewSession(_ sender: Any?) {
@@ -435,8 +471,12 @@ class MainWindowController: NSWindowController {
     }
 
     func updateSidebarGitViews(cwd: String?) {
-        guard isSidebarVisible else { return }
-        sidebarView.updateGitViews(cwd: cwd)
+        if isSidebarVisible {
+            sidebarView.updateGitViews(cwd: cwd)
+        }
+        if isGitPanelVisible {
+            gitPanelView.refresh(cwd: cwd)
+        }
     }
 
     // MARK: - Session display
@@ -485,13 +525,6 @@ extension MainWindowController: NSToolbarDelegate {
             item.label = "Sidebar"
             return item
 
-        case .editorToggle:
-            let item = NSToolbarItem(itemIdentifier: .editorToggle)
-            item.view = makeToolbarButton(symbolName: "sidebar.right", accessibilityDescription: "Toggle Editor Sidebar", action: #selector(toolbarToggleEditorSidebar(_:)))
-            item.isBordered = false
-            item.label = "Editor"
-            return item
-
         case .actions:
             let item = NSToolbarItem(itemIdentifier: .actions)
             item.isBordered = false
@@ -515,6 +548,7 @@ extension MainWindowController: NSToolbarDelegate {
             stack.addArrangedSubview(makeToolbarButton(symbolName: "rectangle.split.1x2", accessibilityDescription: "Split Horizontal", action: #selector(toolbarSplitHorizontal(_:))))
             stack.addArrangedSubview(makeToolbarButton(symbolName: "rectangle.split.2x1", accessibilityDescription: "Split Vertical", action: #selector(toolbarSplitVertical(_:))))
             stack.addArrangedSubview(makeToolbarButton(symbolName: "plus", accessibilityDescription: "New Session", action: #selector(toolbarNewSession(_:))))
+            stack.addArrangedSubview(makeToolbarButton(symbolName: "sidebar.right", accessibilityDescription: "Toggle Right Sidebar", action: #selector(toolbarToggleEditorSidebar(_:))))
             item.view = stack
             item.label = "Actions"
             return item
@@ -529,7 +563,6 @@ extension MainWindowController: NSToolbarDelegate {
             .sidebarToggle,
             .flexSpace,
             .actions,
-            .editorToggle,
         ]
     }
 
@@ -538,7 +571,6 @@ extension MainWindowController: NSToolbarDelegate {
             .sidebarToggle,
             .flexSpace,
             .actions,
-            .editorToggle,
         ]
     }
 }
@@ -657,6 +689,23 @@ extension MainWindowController: SidebarViewDelegate {
     }
 }
 
+// MARK: - GitPanelViewDelegate
+
+extension MainWindowController: GitPanelViewDelegate {
+    func gitPanelDidRequestOpenWorktree(path: String) {
+        // Reuse the same flow the left sidebar uses: spawn a new session and cd into it.
+        sidebarDidRequestOpenWorktree(path: path)
+    }
+}
+
+// MARK: - RightSidebarViewDelegate
+
+extension MainWindowController: RightSidebarViewDelegate {
+    func rightSidebarDidRequestCollapse() {
+        toggleRightSidebar()
+    }
+}
+
 // MARK: - EditorSidebarViewDelegate
 
 extension MainWindowController: EditorSidebarViewDelegate {
@@ -669,21 +718,21 @@ extension MainWindowController: EditorSidebarViewDelegate {
 
         let targetWidth: CGFloat
         if isEditorExpanded {
-            editorSidebarWidthBeforeExpand = editorSidebarWidth
+            rightSidebarWidthBeforeExpand = rightSidebarWidth
             let leftEdge = isSidebarVisible ? sidebarWidth : 0
             let available = contentView.bounds.width - leftEdge
             // Use 60% of available space, leave room for the terminal
             targetWidth = min(available * 0.6, available - 200)
         } else {
-            targetWidth = editorSidebarWidthBeforeExpand
+            targetWidth = rightSidebarWidthBeforeExpand
         }
 
         NSAnimationContext.runAnimationGroup { context in
             context.duration = Theme.Animation.standard
             context.timingFunction = CAMediaTimingFunction(name: .easeOut)
             context.allowsImplicitAnimation = true
-            editorSidebarWidthConstraint.animator().constant = targetWidth
-            editorSidebarWidth = targetWidth
+            rightSidebarWidthConstraint.animator().constant = targetWidth
+            rightSidebarWidth = targetWidth
             contentView.layoutSubtreeIfNeeded()
         }
     }

@@ -26,6 +26,24 @@ class EditorSidebarView: NSView {
     private var placeholderLabel: NSTextField!
     private var unsupportedLabel: NSTextField!
 
+    private var tabStripTopConstraint: NSLayoutConstraint!
+
+    /// Distance from the view's top to the tab strip. Default 40pt reserves space
+    /// for the window toolbar. Set to 0 when embedded below a shared header (e.g.
+    /// a tabbed container that already accounts for the toolbar).
+    var topContentInset: CGFloat = 40 {
+        didSet { tabStripTopConstraint?.constant = topContentInset }
+    }
+
+    /// Hide the view's own separator + glass. Use when wrapped in a container
+    /// that draws shared chrome.
+    var chromeHidden: Bool = false {
+        didSet {
+            separatorLine?.isHidden = chromeHidden
+            if chromeHidden { glassView?.isHidden = true }
+        }
+    }
+
     private let fileLoadQueue = DispatchQueue(
         label: "amux.editor-file-load",
         qos: .userInitiated
@@ -171,13 +189,15 @@ class EditorSidebarView: NSView {
 
         let contentLeading = separatorLine.trailingAnchor
 
+        tabStripTopConstraint = tabStripView.topAnchor.constraint(equalTo: topAnchor, constant: topContentInset)
+
         NSLayoutConstraint.activate([
             separatorLine.topAnchor.constraint(equalTo: topAnchor),
             separatorLine.leadingAnchor.constraint(equalTo: leadingAnchor),
             separatorLine.bottomAnchor.constraint(equalTo: bottomAnchor),
             separatorLine.widthAnchor.constraint(equalToConstant: 1),
 
-            tabStripView.topAnchor.constraint(equalTo: topAnchor, constant: 40),
+            tabStripTopConstraint,
             tabStripView.leadingAnchor.constraint(equalTo: contentLeading),
             tabStripView.trailingAnchor.constraint(equalTo: trailingAnchor),
             tabStripView.heightAnchor.constraint(equalToConstant: EditorTabStripView.barHeight),

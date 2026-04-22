@@ -10,15 +10,20 @@ enum ProcessHelper {
         let parent = ProcessInfo.processInfo.processIdentifier
         let allProcs = allProcesses()
 
-        let directChildren = allProcs
-            .filter { $0.kp_eproc.e_ppid == parent }
-            .map { $0.kp_proc.p_pid }
+        // /usr/bin/login is setuid root; proc_name() fails for it from a
+        // sandboxed caller. Use p_comm from kinfo_proc (already fetched via
+        // sysctl, which works across UIDs) to identify login intermediaries.
+        let directChildren = allProcs.filter { $0.kp_eproc.e_ppid == parent }
 
         var result: [pid_t] = []
-        for childPid in directChildren {
-            let childName = name(of: childPid)
-            if childName == "login" {
-                // login is an intermediary -- return its children (the actual shells)
+        for proc in directChildren {
+            let childPid = proc.kp_proc.p_pid
+            let comm = withUnsafePointer(to: proc.kp_proc.p_comm) {
+                $0.withMemoryRebound(to: CChar.self, capacity: Int(MAXCOMLEN) + 1) {
+                    String(cString: $0)
+                }
+            }
+            if comm == "login" {
                 let grandchildren = allProcs
                     .filter { $0.kp_eproc.e_ppid == childPid }
                     .map { $0.kp_proc.p_pid }
@@ -86,21 +91,24 @@ enum ProcessHelper {
 
         guard !args.isEmpty else { return nil }
 
-        // Check argv[0] last path component first (most common case)
+        // Check argv[0] last path component first (most common case).
+        // Strip a trailing ".exe" since Bun-bundled Claude/Codex ship as
+        // `claude.exe` / `codex.exe` on macOS.
         let argv0Name = URL(fileURLWithPath: args[0]).lastPathComponent
-        if argv0Name == "claude" || argv0Name == "codex" {
-            return argv0Name
+        let stripped = argv0Name.hasSuffix(".exe") ? String(argv0Name.dropLast(4)) : argv0Name
+        if stripped == "claude" || stripped == "codex" {
+            return stripped
         }
 
         // Scan all args for known agent identifiers in paths
         for arg in args {
             let lower = arg.lowercased()
             if lower.contains("/bin/claude") || lower.contains("claude-code") ||
-               lower.hasSuffix("/claude") {
+               lower.hasSuffix("/claude") || lower.hasSuffix("/claude.exe") {
                 return "claude"
             }
             if lower.contains("/bin/codex") || lower.contains("@openai/codex") ||
-               lower.hasSuffix("/codex") {
+               lower.hasSuffix("/codex") || lower.hasSuffix("/codex.exe") {
                 return "codex"
             }
         }

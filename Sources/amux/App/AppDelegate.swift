@@ -28,6 +28,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         setupGhosttyResourcesDir()
         setupAmuxShellIntegration()
         setupClaudeCodeHooks()
+        setupCodexHooks()
 
         // Initialize the Ghostty library first
         let app = GhosttyApp()
@@ -288,6 +289,103 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    private func setupCodexHooks() {
+        guard let hookScript = locateAgentHookScript() else {
+            NSLog("[amux] Could not locate amux-agent-hook.sh, skipping Codex hooks setup")
+            return
+        }
+
+        let codexDir = NSHomeDirectory() + "/.codex"
+        let configPath = codexDir + "/config.toml"
+        let hooksPath = codexDir + "/hooks.json"
+        let fm = FileManager.default
+
+        // Ensure ~/.codex exists
+        if !fm.fileExists(atPath: codexDir) {
+            try? fm.createDirectory(atPath: codexDir, withIntermediateDirectories: true)
+        }
+
+        // Enable codex_hooks feature in config.toml
+        var configContents = ""
+        if let data = fm.contents(atPath: configPath), let str = String(data: data, encoding: .utf8) {
+            configContents = str
+        }
+
+        if !configContents.contains("codex_hooks") {
+            // Append to existing [features] section or create one
+            if configContents.contains("[features]") {
+                configContents = configContents.replacingOccurrences(
+                    of: "[features]",
+                    with: "[features]\ncodex_hooks = true"
+                )
+            } else {
+                if !configContents.hasSuffix("\n") && !configContents.isEmpty { configContents += "\n" }
+                configContents += "\n[features]\ncodex_hooks = true\n"
+            }
+            try? configContents.write(toFile: configPath, atomically: true, encoding: .utf8)
+            NSLog("[amux] Enabled codex_hooks feature in config.toml")
+        }
+
+        // Build hooks.json
+        let hookEntry: [String: Any] = [
+            "type": "command",
+            "command": hookScript,
+            "statusMessage": "amux hook",
+            "timeout": 5
+        ]
+        let matcherBlock: [String: Any] = [
+            "matcher": "",
+            "hooks": [hookEntry]
+        ]
+        let events = ["SessionStart", "PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop"]
+
+        // Read existing hooks.json or start fresh
+        var hooksRoot: [String: Any] = [:]
+        if let data = fm.contents(atPath: hooksPath),
+           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            hooksRoot = json
+        }
+
+        var hooks = hooksRoot["hooks"] as? [String: Any] ?? [:]
+        var changed = false
+
+        for event in events {
+            if let existing = hooks[event] as? [[String: Any]] {
+                let alreadyRegistered = existing.contains { entry in
+                    guard let entryHooks = entry["hooks"] as? [[String: Any]] else { return false }
+                    return entryHooks.contains { ($0["command"] as? String)?.contains("amux-agent-hook") == true }
+                }
+                if alreadyRegistered { continue }
+                hooks[event] = existing + [matcherBlock]
+            } else {
+                hooks[event] = [matcherBlock]
+            }
+            changed = true
+        }
+
+        guard changed else {
+            NSLog("[amux] Codex hooks already configured")
+            return
+        }
+
+        hooksRoot["hooks"] = hooks
+
+        guard let data = try? JSONSerialization.data(withJSONObject: hooksRoot, options: [.prettyPrinted, .sortedKeys]),
+              var jsonString = String(data: data, encoding: .utf8) else {
+            NSLog("[amux] Failed to serialize Codex hooks")
+            return
+        }
+
+        if !jsonString.hasSuffix("\n") { jsonString += "\n" }
+
+        do {
+            try jsonString.write(toFile: hooksPath, atomically: true, encoding: .utf8)
+            NSLog("[amux] Configured Codex hooks -> %@", hookScript)
+        } catch {
+            NSLog("[amux] Failed to write Codex hooks: %@", error.localizedDescription)
+        }
+    }
+
     private func locateAgentHookScript() -> String? {
         let fm = FileManager.default
 
@@ -320,6 +418,18 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Clean up per-pane status files
         let statusDir = "/tmp/amux-\(ProcessInfo.processInfo.processIdentifier)"
         try? FileManager.default.removeItem(atPath: statusDir)
+    }
+
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        let alert = NSAlert()
+        alert.messageText = "Quit amux?"
+        alert.informativeText = "All terminal sessions will be closed."
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+
+        let response = alert.runModal()
+        return response == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -507,6 +617,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         toggleEditorItem.target = self
         viewMenu.addItem(toggleEditorItem)
 
+        let toggleGitPanelItem = NSMenuItem(title: "Toggle Git Panel", action: #selector(toggleGitPanel(_:)), keyEquivalent: "g")
+        toggleGitPanelItem.keyEquivalentModifierMask = [.command, .shift]
+        toggleGitPanelItem.target = self
+        viewMenu.addItem(toggleGitPanelItem)
+
         let saveEditorItem = NSMenuItem(title: "Save Editor File", action: #selector(saveEditorFile(_:)), keyEquivalent: "s")
         saveEditorItem.keyEquivalentModifierMask = [.command, .shift]
         saveEditorItem.target = self
@@ -641,6 +756,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             PaletteCommand(category: "Navigation", name: "Navigate Right", shortcut: "Cmd+Shift+Right", icon: "arrow.right") { [weak self] in self?.navigateRight(nil) },
             PaletteCommand(category: "View", name: "Toggle Sidebar", shortcut: "Cmd+B", icon: "sidebar.left") { [weak self] in self?.toggleSidebar(nil) },
             PaletteCommand(category: "View", name: "Toggle Editor Sidebar", shortcut: "Cmd+\\", icon: "sidebar.right") { [weak self] in self?.toggleEditorSidebar(nil) },
+            PaletteCommand(category: "View", name: "Toggle Git Panel", shortcut: "Cmd+Shift+G", icon: "arrow.triangle.branch") { [weak self] in self?.toggleGitPanel(nil) },
             PaletteCommand(category: "View", name: "Increase Font Size", shortcut: "Cmd++", icon: "plus.magnifyingglass") { [weak self] in self?.increaseFontSize(nil) },
             PaletteCommand(category: "View", name: "Decrease Font Size", shortcut: "Cmd+-", icon: "minus.magnifyingglass") { [weak self] in self?.decreaseFontSize(nil) },
             PaletteCommand(category: "View", name: "Reset Font Size", shortcut: "Cmd+0", icon: "1.magnifyingglass") { [weak self] in self?.resetFontSize(nil) },
@@ -959,6 +1075,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleEditorSidebar(_ sender: Any?) {
         windowController.toggleEditorSidebar()
+    }
+
+    @objc private func toggleGitPanel(_ sender: Any?) {
+        windowController.toggleGitPanel()
     }
 
     @objc private func saveEditorFile(_ sender: Any?) {

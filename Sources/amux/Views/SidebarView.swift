@@ -18,7 +18,6 @@ enum SidebarMode {
     case agents
     case fileTree
     case worktrees
-    case gitStatus
 }
 
 class SidebarView: NSView {
@@ -42,11 +41,9 @@ class SidebarView: NSView {
     // File tree
     private var fileTreeView: FileTreeView!
 
-    // Worktree & Git status
+    // Worktree
     private var worktreeButton: DimIconButton!
-    private var gitStatusButton: DimIconButton!
     private var worktreeView: WorktreeView!
-    private var gitStatusView: GitStatusView!
 
     // Agents
     private var agentsButton: DimIconButton!
@@ -86,7 +83,6 @@ class SidebarView: NSView {
         sessionsButton.isActiveState = mode == .sessions
         fileTreeButton.isActiveState = mode == .fileTree
         worktreeButton.isActiveState = mode == .worktrees
-        gitStatusButton.isActiveState = mode == .gitStatus
         agentsButton.isActiveState = mode == .agents
         tableView.reloadData()
     }
@@ -141,7 +137,6 @@ class SidebarView: NSView {
         setupTableView()
         setupFileTree()
         setupWorktreeView()
-        setupGitStatusView()
         setupAgentListView()
         setupSeparatorLine()
         setupConstraints()
@@ -165,9 +160,6 @@ class SidebarView: NSView {
 
         worktreeButton = makeIconBarButton(symbolName: "arrow.triangle.branch", action: #selector(worktreeButtonClicked))
         iconBar.addSubview(worktreeButton)
-
-        gitStatusButton = makeIconBarButton(symbolName: "chart.bar.doc.horizontal", action: #selector(gitStatusButtonClicked))
-        iconBar.addSubview(gitStatusButton)
 
         agentsBadge = NSView()
         agentsBadge.translatesAutoresizingMaskIntoConstraints = false
@@ -197,11 +189,6 @@ class SidebarView: NSView {
             worktreeButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
             worktreeButton.widthAnchor.constraint(equalToConstant: 24),
             worktreeButton.heightAnchor.constraint(equalToConstant: 24),
-
-            gitStatusButton.leadingAnchor.constraint(equalTo: worktreeButton.trailingAnchor, constant: 6),
-            gitStatusButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
-            gitStatusButton.widthAnchor.constraint(equalToConstant: 24),
-            gitStatusButton.heightAnchor.constraint(equalToConstant: 24),
 
             agentsBadge.widthAnchor.constraint(equalToConstant: 8),
             agentsBadge.heightAnchor.constraint(equalToConstant: 8),
@@ -254,13 +241,6 @@ class SidebarView: NSView {
             self?.delegate?.sidebarDidRequestOpenWorktree(path: path)
         }
         addSubview(worktreeView)
-    }
-
-    private func setupGitStatusView() {
-        gitStatusView = GitStatusView(frame: .zero)
-        gitStatusView.translatesAutoresizingMaskIntoConstraints = false
-        gitStatusView.isHidden = true
-        addSubview(gitStatusView)
     }
 
     private func setupAgentListView() {
@@ -371,12 +351,6 @@ class SidebarView: NSView {
             worktreeView.trailingAnchor.constraint(equalTo: contentTrailing),
             worktreeView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            // Git status view (same region, toggled via isHidden)
-            gitStatusView.topAnchor.constraint(equalTo: iconBarSeparator.bottomAnchor),
-            gitStatusView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            gitStatusView.trailingAnchor.constraint(equalTo: contentTrailing),
-            gitStatusView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
             // Agent list view (same region, toggled via isHidden)
             agentListView.topAnchor.constraint(equalTo: iconBarSeparator.bottomAnchor),
             agentListView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -396,7 +370,6 @@ class SidebarView: NSView {
     @objc private func sessionsButtonClicked() { setMode(.sessions) }
     @objc private func fileTreeButtonClicked() { setMode(.fileTree) }
     @objc private func worktreeButtonClicked() { setMode(.worktrees) }
-    @objc private func gitStatusButtonClicked() { setMode(.gitStatus) }
     @objc private func agentsButtonClicked() { setMode(.agents) }
 
     @objc private func attentionCountDidChange() {
@@ -409,14 +382,12 @@ class SidebarView: NSView {
         sessionsButton.isActiveState = mode == .sessions
         fileTreeButton.isActiveState = mode == .fileTree
         worktreeButton.isActiveState = mode == .worktrees
-        gitStatusButton.isActiveState = mode == .gitStatus
         agentsButton.isActiveState = mode == .agents
 
         headerLabel.isHidden = mode != .sessions
         scrollView.isHidden = mode != .sessions
         fileTreeView.isHidden = mode != .fileTree
         worktreeView.isHidden = mode != .worktrees
-        gitStatusView.isHidden = mode != .gitStatus
         agentListView.isHidden = mode != .agents
 
         let dir = delegate?.sidebarCurrentDirectory()
@@ -424,8 +395,6 @@ class SidebarView: NSView {
             fileTreeView.setRootPath(dir)
         } else if mode == .worktrees {
             worktreeView.refresh(cwd: dir)
-        } else if mode == .gitStatus {
-            gitStatusView.refresh(cwd: dir)
         }
     }
 
@@ -438,7 +407,6 @@ class SidebarView: NSView {
     /// Called externally when the active pane changes or its pwd updates.
     func updateGitViews(cwd: String?) {
         if mode == .worktrees { worktreeView.refresh(cwd: cwd) }
-        if mode == .gitStatus { gitStatusView.refresh(cwd: cwd) }
     }
 
     // MARK: - Public
