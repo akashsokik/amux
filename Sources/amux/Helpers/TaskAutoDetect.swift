@@ -42,7 +42,37 @@ enum TaskAutoDetect {
         return "npm"
     }
 
+    // MARK: - Makefile
+
+    static func makefile(at worktreePath: String) -> [RunnerTask] {
+        let url = URL(fileURLWithPath: worktreePath).appendingPathComponent("Makefile")
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+
+        // Match start-of-line, name = [A-Za-z0-9_-]+, colon, not followed by '='
+        // (avoid matching ':=' assignment lines).
+        let pattern = #"^([A-Za-z0-9_-]+):(?!=)"#
+        guard let re = try? NSRegularExpression(pattern: pattern, options: [.anchorsMatchLines]) else {
+            return []
+        }
+        var seen = Set<String>()
+        var out: [RunnerTask] = []
+        let ns = content as NSString
+        re.enumerateMatches(in: content, range: NSRange(location: 0, length: ns.length)) { match, _, _ in
+            guard let m = match, m.numberOfRanges >= 2 else { return }
+            let name = ns.substring(with: m.range(at: 1))
+            guard !name.hasPrefix("."), seen.insert(name).inserted else { return }
+            out.append(RunnerTask(
+                id: "make:\(name)",
+                name: name,
+                command: "make \(name)",
+                cwd: nil,
+                source: .make,
+                isOverridden: false
+            ))
+        }
+        return out
+    }
+
     // Stubs — filled by later tasks.
-    static func makefile(at worktreePath: String) -> [RunnerTask] { [] }
     static func procfile(at worktreePath: String) -> [RunnerTask] { [] }
 }
