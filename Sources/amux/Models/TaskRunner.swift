@@ -114,6 +114,31 @@ final class TaskRunner {
         postUpdate(taskId: id, worktreePath: worktreePath, runNumber: runNumber)
     }
 
+    /// Remove a run from history. If the run is still active, the process is
+    /// force-killed (SIGTERM → SIGKILL escalation) before the entry is
+    /// dropped, so the child doesn't linger past the UI removing the tab.
+    func removeRun(id: String, worktreePath: String, runNumber: Int) {
+        let key = TaskSessionKey(worktreePath: worktreePath, taskId: id)
+        queue.sync {
+            guard var list = runs[key] else { return }
+            guard let idx = list.firstIndex(where: { $0.runNumber == runNumber }) else { return }
+            let target = list[idx]
+            if target.status == .running {
+                // SIGTERM first, then SIGKILL immediately — we're removing
+                // the tab, the user doesn't want to wait 3s for escalation.
+                target.process.terminate()
+                if let pid = target.pid { kill(pid, SIGKILL) }
+            }
+            list.remove(at: idx)
+            if list.isEmpty {
+                runs.removeValue(forKey: key)
+            } else {
+                runs[key] = list
+            }
+        }
+        postUpdate(taskId: id, worktreePath: worktreePath, runNumber: runNumber)
+    }
+
     private func _stopSessionLocked(_ session: TaskRunSession) {
         guard session.status == .running, session.pid != nil else { return }
         // Fallback path: Process.startsNewProcessGroupWhenSet isn't available in this
