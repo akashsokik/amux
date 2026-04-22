@@ -10,9 +10,8 @@ protocol RunnerPanelViewDelegate: AnyObject {
 // MARK: - Runner Panel View
 //
 // Right-side panel that lists user-defined tasks for the active worktree and
-// will later host run/stop controls and a log viewer. Task 11 adds the
-// scrollable outline list (grouped by source) with play/stop toggles and
-// status dots. Log panel, "+" sheet, and loadError banner land in later tasks.
+// hosts run/stop controls and a log viewer. Task 11 added the outline list.
+// Task 12 wraps that list in an NSSplitView with a log-tailing panel below.
 
 final class RunnerPanelView: NSView {
     weak var delegate: RunnerPanelViewDelegate?
@@ -38,8 +37,15 @@ final class RunnerPanelView: NSView {
     private(set) var store: RunnerTaskStore?
     private let runner = TaskRunner()
 
-    /// Most recently selected task id. Task 12's log panel reads this.
-    private(set) var selectedTaskID: String?
+    /// Most recently selected task id. Setter refreshes the log panel
+    /// (header label, button states, text view contents).
+    private(set) var selectedTaskID: String? {
+        didSet {
+            if oldValue != selectedTaskID {
+                refreshLogPanel(replaceContents: true)
+            }
+        }
+    }
 
     private var glassView: GlassBackgroundView?
     private var emptyLabel: NSTextField!
@@ -47,6 +53,23 @@ final class RunnerPanelView: NSView {
     private var scrollView: NSScrollView!
     private var topInsetConstraint: NSLayoutConstraint?
     private var scrollTopConstraint: NSLayoutConstraint?
+
+    // Split view hosting outline (top) + log panel (bottom).
+    private var splitView: NSSplitView!
+    private var didSetInitialSplitPosition = false
+
+    // Log panel subviews.
+    private var logContainer: NSView!
+    private var logTitleLabel: NSTextField!
+    private var logTaskNameLabel: NSTextField!
+    private var promoteButton: DimIconButton!
+    private var stopButton: DimIconButton!
+    private var clearButton: DimIconButton!
+    private var logScrollView: NSScrollView!
+    private var logTextView: NSTextView!
+
+    // Coalesce log refreshes so rapid output bursts don't starve the main thread.
+    private var pendingLogRefresh: DispatchWorkItem?
 
     // Outline data — wrappers use reference-equality so NSOutlineView's
     // identity-keyed APIs (reloadItem, expandItem) work correctly across
@@ -86,6 +109,7 @@ final class RunnerPanelView: NSView {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
+        pendingLogRefresh?.cancel()
     }
 
     // MARK: - Public
@@ -160,18 +184,42 @@ final class RunnerPanelView: NSView {
         scrollView.autohidesScrollers = true
         scrollView.scrollerStyle = .overlay
         scrollView.verticalScroller = ThinScroller()
-        addSubview(scrollView)
 
-        let scrollTop = scrollView.topAnchor.constraint(equalTo: topAnchor, constant: topContentInset)
+        // Top container: just the outline scroll view, flush-filling.
+        let outlineContainer = NSView()
+        outlineContainer.translatesAutoresizingMaskIntoConstraints = false
+        outlineContainer.addSubview(scrollView)
+        NSLayoutConstraint.activate([
+            scrollView.topAnchor.constraint(equalTo: outlineContainer.topAnchor),
+            scrollView.leadingAnchor.constraint(equalTo: outlineContainer.leadingAnchor),
+            scrollView.trailingAnchor.constraint(equalTo: outlineContainer.trailingAnchor),
+            scrollView.bottomAnchor.constraint(equalTo: outlineContainer.bottomAnchor),
+        ])
+
+        // Bottom container: log panel.
+        logContainer = buildLogContainer()
+
+        // Split view wraps both halves.
+        splitView = NSSplitView()
+        splitView.translatesAutoresizingMaskIntoConstraints = false
+        splitView.isVertical = false
+        splitView.dividerStyle = .thin
+        splitView.delegate = self
+        splitView.addArrangedSubview(outlineContainer)
+        splitView.addArrangedSubview(logContainer)
+        splitView.setHoldingPriority(NSLayoutConstraint.Priority(251), forSubviewAt: 0)
+        addSubview(splitView)
+
+        let scrollTop = splitView.topAnchor.constraint(equalTo: topAnchor, constant: topContentInset)
         scrollTopConstraint = scrollTop
         NSLayoutConstraint.activate([
             scrollTop,
-            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
+            splitView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            splitView.trailingAnchor.constraint(equalTo: trailingAnchor),
+            splitView.bottomAnchor.constraint(equalTo: bottomAnchor),
         ])
 
-        // Empty-state label floats above the outline; only one is visible at a time.
+        // Empty-state label floats above the split view; only one is visible at a time.
         emptyLabel = NSTextField(labelWithString: "Open a worktree to run tasks.")
         emptyLabel.translatesAutoresizingMaskIntoConstraints = false
         emptyLabel.font = Theme.Fonts.body(size: 12)
@@ -194,20 +242,170 @@ final class RunnerPanelView: NSView {
 
         applyGlassOrSolid()
         refreshEmptyState()
+        refreshLogPanel(replaceContents: true)
+    }
+
+    private func buildLogContainer() -> NSView {
+        let container = NSView()
+        container.translatesAutoresizingMaskIntoConstraints = false
+
+        // Header row.
+        let header = NSView()
+        header.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(header)
+
+        logTitleLabel = NSTextField(labelWithString: "Log")
+        logTitleLabel.translatesAutoresizingMaskIntoConstraints = false
+        logTitleLabel.font = Theme.Fonts.label(size: 10)
+        logTitleLabel.textColor = Theme.tertiaryText
+        logTitleLabel.isBezeled = false
+        logTitleLabel.isEditable = false
+        logTitleLabel.isSelectable = false
+        logTitleLabel.backgroundColor = .clear
+        header.addSubview(logTitleLabel)
+
+        logTaskNameLabel = NSTextField(labelWithString: "—")
+        logTaskNameLabel.translatesAutoresizingMaskIntoConstraints = false
+        logTaskNameLabel.font = Theme.Fonts.body(size: 11)
+        logTaskNameLabel.textColor = Theme.secondaryText
+        logTaskNameLabel.isBezeled = false
+        logTaskNameLabel.isEditable = false
+        logTaskNameLabel.isSelectable = false
+        logTaskNameLabel.backgroundColor = .clear
+        logTaskNameLabel.lineBreakMode = .byTruncatingTail
+        logTaskNameLabel.maximumNumberOfLines = 1
+        header.addSubview(logTaskNameLabel)
+
+        promoteButton = makeIconButton(
+            symbol: "arrow.up.right.square",
+            tooltip: "Promote to pane",
+            action: #selector(promoteClicked)
+        )
+        stopButton = makeIconButton(
+            symbol: "stop.fill",
+            tooltip: "Stop",
+            action: #selector(stopClicked)
+        )
+        clearButton = makeIconButton(
+            symbol: "trash",
+            tooltip: "Clear log",
+            action: #selector(clearClicked)
+        )
+        header.addSubview(promoteButton)
+        header.addSubview(stopButton)
+        header.addSubview(clearButton)
+
+        NSLayoutConstraint.activate([
+            header.topAnchor.constraint(equalTo: container.topAnchor),
+            header.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            header.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            header.heightAnchor.constraint(equalToConstant: 26),
+
+            logTitleLabel.leadingAnchor.constraint(equalTo: header.leadingAnchor, constant: 10),
+            logTitleLabel.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+
+            logTaskNameLabel.leadingAnchor.constraint(equalTo: logTitleLabel.trailingAnchor, constant: 6),
+            logTaskNameLabel.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            logTaskNameLabel.trailingAnchor.constraint(lessThanOrEqualTo: promoteButton.leadingAnchor, constant: -6),
+
+            clearButton.trailingAnchor.constraint(equalTo: header.trailingAnchor, constant: -8),
+            clearButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            clearButton.widthAnchor.constraint(equalToConstant: 20),
+            clearButton.heightAnchor.constraint(equalToConstant: 20),
+
+            stopButton.trailingAnchor.constraint(equalTo: clearButton.leadingAnchor, constant: -2),
+            stopButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            stopButton.widthAnchor.constraint(equalToConstant: 20),
+            stopButton.heightAnchor.constraint(equalToConstant: 20),
+
+            promoteButton.trailingAnchor.constraint(equalTo: stopButton.leadingAnchor, constant: -2),
+            promoteButton.centerYAnchor.constraint(equalTo: header.centerYAnchor),
+            promoteButton.widthAnchor.constraint(equalToConstant: 20),
+            promoteButton.heightAnchor.constraint(equalToConstant: 20),
+        ])
+
+        // Log text view — selectable, not editable, monospace.
+        let scroll = NSScrollView()
+        scroll.translatesAutoresizingMaskIntoConstraints = false
+        scroll.hasVerticalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.drawsBackground = false
+        scroll.borderType = .noBorder
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
+        scroll.verticalScroller = ThinScroller()
+
+        let textView = NSTextView()
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isRichText = false
+        textView.drawsBackground = false
+        textView.backgroundColor = .clear
+        textView.textContainerInset = NSSize(width: 8, height: 6)
+        textView.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        textView.textColor = Theme.secondaryText
+        textView.allowsUndo = false
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.autoresizingMask = [.width]
+        textView.minSize = NSSize(width: 0, height: 0)
+        textView.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude, height: CGFloat.greatestFiniteMagnitude)
+        // Enable word wrap (matches most log views).
+        if let container = textView.textContainer {
+            container.widthTracksTextView = true
+            container.containerSize = NSSize(
+                width: scroll.contentSize.width,
+                height: CGFloat.greatestFiniteMagnitude
+            )
+        }
+
+        scroll.documentView = textView
+        container.addSubview(scroll)
+        logScrollView = scroll
+        logTextView = textView
+
+        NSLayoutConstraint.activate([
+            scroll.topAnchor.constraint(equalTo: header.bottomAnchor),
+            scroll.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            scroll.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            scroll.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+        ])
+
+        return container
+    }
+
+    private func makeIconButton(symbol: String, tooltip: String, action: Selector) -> DimIconButton {
+        let button = DimIconButton()
+        button.translatesAutoresizingMaskIntoConstraints = false
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: tooltip)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11, weight: .medium))
+        button.toolTip = tooltip
+        button.target = self
+        button.action = action
+        button.refreshDimState()
+        return button
+    }
+
+    override func layout() {
+        super.layout()
+        if !didSetInitialSplitPosition, splitView.bounds.height > 100 {
+            splitView.setPosition(splitView.bounds.height * 0.6, ofDividerAt: 0)
+            didSetInitialSplitPosition = true
+        }
     }
 
     private func refreshEmptyState() {
         if store == nil {
             emptyLabel.stringValue = "Open a worktree to run tasks."
             emptyLabel.isHidden = false
-            scrollView.isHidden = true
+            splitView.isHidden = true
         } else if store?.tasks.isEmpty == true {
             emptyLabel.stringValue = "No tasks detected. Tap + to add one, or create .amux/tasks.json."
             emptyLabel.isHidden = false
-            scrollView.isHidden = true
+            splitView.isHidden = true
         } else {
             emptyLabel.isHidden = true
-            scrollView.isHidden = false
+            splitView.isHidden = false
         }
     }
 
@@ -253,6 +451,12 @@ final class RunnerPanelView: NSView {
                 if let item = self.groupItems[src] { self.outlineView.expandItem(item) }
             }
             self.refreshEmptyState()
+            // Clear stale selection if the task is gone.
+            if let sel = self.selectedTaskID, self.taskItems[sel] == nil {
+                self.selectedTaskID = nil
+            } else {
+                self.refreshLogPanel(replaceContents: false)
+            }
         }
     }
 
@@ -261,9 +465,133 @@ final class RunnerPanelView: NSView {
         // readabilityHandler fires off arbitrary threads; hop to main before
         // touching AppKit.
         DispatchQueue.main.async { [weak self] in
-            guard let self, let item = self.taskItems[taskId] else { return }
-            self.outlineView.reloadItem(item, reloadChildren: false)
+            guard let self else { return }
+            // Keep the outline row in sync (status dot, play/stop icon).
+            if let item = self.taskItems[taskId] {
+                self.outlineView.reloadItem(item, reloadChildren: false)
+            }
+            // Refresh header buttons' enabled state in case session just appeared.
+            self.updateLogButtonsEnabled()
+            // Coalesced log text refresh: only if the update is for the selected task.
+            if taskId == self.selectedTaskID {
+                self.scheduleLogRefresh()
+            }
         }
+    }
+
+    // MARK: - Log panel refresh
+
+    private func scheduleLogRefresh() {
+        pendingLogRefresh?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            self?.refreshLogPanel(replaceContents: false)
+        }
+        pendingLogRefresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(16), execute: work)
+    }
+
+    /// Refresh the log panel header + button states. When `replaceContents` is
+    /// true the text view is replaced with the latest buffer snapshot (used on
+    /// selection change and immediate refreshes). When false, contents are
+    /// updated only if something is actually going to be displayed.
+    private func refreshLogPanel(replaceContents: Bool) {
+        guard logContainer != nil else { return }
+
+        // Header label: task name or em-dash.
+        let taskName: String
+        if let id = selectedTaskID, let task = taskItems[id]?.task {
+            taskName = task.name
+        } else {
+            taskName = "—"
+        }
+        logTaskNameLabel.stringValue = taskName
+
+        updateLogButtonsEnabled()
+
+        // Text view contents.
+        guard let id = selectedTaskID,
+              let session = runner.session(for: id) else {
+            if replaceContents {
+                setLogText("")
+            }
+            return
+        }
+
+        let snapshot = session.buffer.snapshot()
+        setLogText(snapshot)
+    }
+
+    /// Replace the text view's contents, preserving scroll position when the
+    /// user has scrolled away from the bottom.
+    private func setLogText(_ text: String) {
+        guard let textView = logTextView, let scroll = logScrollView else { return }
+
+        // Determine "at bottom" BEFORE mutating contents. Use a small slack
+        // window because scrollers are overlays and content insets can nudge
+        // the math by a pixel or two.
+        let atBottom: Bool = {
+            let visibleMaxY = scroll.contentView.bounds.maxY
+            let documentHeight = textView.frame.height
+            return visibleMaxY >= documentHeight - 2
+        }()
+
+        if textView.string != text {
+            textView.string = text
+        }
+
+        if atBottom {
+            // Defer to next runloop tick so layout settles before scrolling.
+            DispatchQueue.main.async { [weak textView] in
+                textView?.scrollToEndOfDocument(nil)
+            }
+        }
+    }
+
+    private func updateLogButtonsEnabled() {
+        guard promoteButton != nil else { return }
+        let hasSelection = selectedTaskID != nil
+        let hasSession: Bool = {
+            guard let id = selectedTaskID else { return false }
+            return runner.session(for: id) != nil
+        }()
+        let enabled = hasSelection && hasSession
+        promoteButton.isEnabled = enabled
+        stopButton.isEnabled = enabled
+        clearButton.isEnabled = enabled
+        // Alpha hint — DimIconButton doesn't style disabled state on its own.
+        let alpha: CGFloat = enabled ? 1.0 : 0.4
+        promoteButton.alphaValue = alpha
+        stopButton.alphaValue = alpha
+        clearButton.alphaValue = alpha
+    }
+
+    // MARK: - Log panel actions
+
+    @objc private func promoteClicked() {
+        guard let id = selectedTaskID,
+              let task = taskItems[id]?.task,
+              let worktreePath = store?.worktreePath else { return }
+        let cwd: String = {
+            if let raw = task.cwd {
+                return (raw as NSString).isAbsolutePath
+                    ? raw
+                    : (worktreePath as NSString).appendingPathComponent(raw)
+            }
+            return worktreePath
+        }()
+        delegate?.runnerPanelDidRequestOpenInPane(command: task.command, cwd: cwd)
+    }
+
+    @objc private func stopClicked() {
+        guard let id = selectedTaskID else { return }
+        runner.stop(id: id)
+    }
+
+    @objc private func clearClicked() {
+        if let id = selectedTaskID, let session = runner.session(for: id) {
+            session.buffer.clear()
+        }
+        logTextView?.string = ""
     }
 
     // MARK: - Click handling
@@ -333,10 +661,27 @@ final class RunnerPanelView: NSView {
         applyGlassOrSolid()
         emptyLabel?.textColor = Theme.tertiaryText
         emptyLabel?.font = Theme.Fonts.body(size: 12)
+        logTitleLabel?.textColor = Theme.tertiaryText
+        logTitleLabel?.font = Theme.Fonts.label(size: 10)
+        logTaskNameLabel?.textColor = Theme.secondaryText
+        logTaskNameLabel?.font = Theme.Fonts.body(size: 11)
+        logTextView?.textColor = Theme.secondaryText
         outlineView?.reloadData()
         for src in visibleSources {
             if let item = groupItems[src] { outlineView.expandItem(item) }
         }
+    }
+}
+
+// MARK: - NSSplitViewDelegate
+
+extension RunnerPanelView: NSSplitViewDelegate {
+    func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMin: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
+        return 80
+    }
+
+    func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMax: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
+        return splitView.bounds.height - 80
     }
 }
 
