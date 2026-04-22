@@ -622,6 +622,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         toggleGitPanelItem.target = self
         viewMenu.addItem(toggleGitPanelItem)
 
+        let toggleRightSidebarItem = NSMenuItem(title: "Toggle Right Sidebar", action: #selector(toggleRightSidebar(_:)), keyEquivalent: "/")
+        toggleRightSidebarItem.keyEquivalentModifierMask = [.command]
+        toggleRightSidebarItem.target = self
+        viewMenu.addItem(toggleRightSidebarItem)
+
         let saveEditorItem = NSMenuItem(title: "Save Editor File", action: #selector(saveEditorFile(_:)), keyEquivalent: "s")
         saveEditorItem.keyEquivalentModifierMask = [.command, .shift]
         saveEditorItem.target = self
@@ -757,6 +762,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             PaletteCommand(category: "View", name: "Toggle Sidebar", shortcut: "Cmd+B", icon: "sidebar.left") { [weak self] in self?.toggleSidebar(nil) },
             PaletteCommand(category: "View", name: "Toggle Editor Sidebar", shortcut: "Cmd+\\", icon: "sidebar.right") { [weak self] in self?.toggleEditorSidebar(nil) },
             PaletteCommand(category: "View", name: "Toggle Git Panel", shortcut: "Cmd+Shift+G", icon: "arrow.triangle.branch") { [weak self] in self?.toggleGitPanel(nil) },
+            PaletteCommand(category: "View", name: "Toggle Right Sidebar", shortcut: "Cmd+/", icon: "sidebar.right") { [weak self] in self?.toggleRightSidebar(nil) },
             PaletteCommand(category: "View", name: "Increase Font Size", shortcut: "Cmd++", icon: "plus.magnifyingglass") { [weak self] in self?.increaseFontSize(nil) },
             PaletteCommand(category: "View", name: "Decrease Font Size", shortcut: "Cmd+-", icon: "minus.magnifyingglass") { [weak self] in self?.decreaseFontSize(nil) },
             PaletteCommand(category: "View", name: "Reset Font Size", shortcut: "Cmd+0", icon: "1.magnifyingglass") { [weak self] in self?.resetFontSize(nil) },
@@ -1079,6 +1085,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func toggleGitPanel(_ sender: Any?) {
         windowController.toggleGitPanel()
+    }
+
+    @objc private func toggleRightSidebar(_ sender: Any?) {
+        windowController.toggleRightSidebar()
     }
 
     @objc private func saveEditorFile(_ sender: Any?) {

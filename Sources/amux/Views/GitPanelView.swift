@@ -27,7 +27,7 @@ final class GitPanelView: NSView {
     // Commit box
     private var commitScroll: NSScrollView!
     private var commitTextView: CommitTextView!
-    private var commitButton: NSButton!
+    private var commitButton: GitPanelActionButton!
     private var pullButton: GitPanelActionButton!
     private var pushButton: GitPanelActionButton!
 
@@ -43,6 +43,12 @@ final class GitPanelView: NSView {
 
     private var splitView: NSSplitView!
     private var didSetInitialSplitPosition = false
+
+    // Collapse state for Changes / History panels.
+    private var changesCollapsed = false
+    private var historyCollapsed = false
+    /// Last divider position while both panels were expanded — restored on un-collapse.
+    private var lastExpandedDividerPosition: CGFloat = 0
 
     // Empty state
     private var emptyLabel: NSTextField!
@@ -235,13 +241,10 @@ final class GitPanelView: NSView {
     }
 
     private func setupActionRow() {
-        commitButton = NSButton(title: "Commit", target: self, action: #selector(commitClicked))
+        commitButton = GitPanelActionButton(title: "Commit", symbolName: "checkmark", style: .primary)
         commitButton.translatesAutoresizingMaskIntoConstraints = false
-        commitButton.bezelStyle = .rounded
-        commitButton.controlSize = .small
-        commitButton.image = NSImage(systemSymbolName: "checkmark", accessibilityDescription: nil)
-        commitButton.imagePosition = .imageLeading
-        commitButton.font = Theme.Fonts.label(size: 11)
+        commitButton.target = self
+        commitButton.action = #selector(commitClicked)
         commitButton.isEnabled = false
         addSubview(commitButton)
 
@@ -276,6 +279,7 @@ final class GitPanelView: NSView {
             SectionHeaderView.Action(symbol: "checklist", tooltip: "Stage all", handler: { [weak self] in self?.stageAllClicked() }),
             SectionHeaderView.Action(symbol: "arrow.uturn.backward", tooltip: "Discard all", handler: { [weak self] in self?.discardAllClicked() }),
         ])
+        changesHeader.onToggle = { [weak self] in self?.toggleChangesCollapsed() }
         changesContainer.addSubview(changesHeader)
 
         changesOutline = NSOutlineView()
@@ -325,6 +329,7 @@ final class GitPanelView: NSView {
 
         historyHeader = SectionHeaderView(title: "HISTORY")
         historyHeader.translatesAutoresizingMaskIntoConstraints = false
+        historyHeader.onToggle = { [weak self] in self?.toggleHistoryCollapsed() }
         historyContainer.addSubview(historyHeader)
 
         historyTable = HoverTableView()
@@ -458,7 +463,45 @@ final class GitPanelView: NSView {
         // initial position once the view has a real frame.
         if !didSetInitialSplitPosition, splitView.bounds.height > 100 {
             splitView.setPosition(splitView.bounds.height * 0.42, ofDividerAt: 0)
+            lastExpandedDividerPosition = splitView.bounds.height * 0.42
             didSetInitialSplitPosition = true
+        }
+        // Re-enforce collapsed divider positions after window resize.
+        if changesCollapsed || historyCollapsed {
+            applyCollapseState()
+        }
+    }
+
+    // MARK: - Collapse
+
+    private func toggleChangesCollapsed() {
+        changesCollapsed.toggle()
+        changesHeader.isCollapsed = changesCollapsed
+        applyCollapseState()
+    }
+
+    private func toggleHistoryCollapsed() {
+        historyCollapsed.toggle()
+        historyHeader.isCollapsed = historyCollapsed
+        applyCollapseState()
+    }
+
+    private func applyCollapseState() {
+        changesScroll.isHidden = changesCollapsed
+        historyScroll.isHidden = historyCollapsed
+
+        let totalHeight = splitView.bounds.height
+        guard totalHeight > 80 else { return }
+        let headerHeight: CGFloat = 26
+        let divider = splitView.dividerThickness
+
+        if changesCollapsed && !historyCollapsed {
+            splitView.setPosition(headerHeight, ofDividerAt: 0)
+        } else if historyCollapsed && !changesCollapsed {
+            splitView.setPosition(totalHeight - headerHeight - divider, ofDividerAt: 0)
+        } else if !changesCollapsed && !historyCollapsed {
+            let pos = lastExpandedDividerPosition > 0 ? lastExpandedDividerPosition : totalHeight * 0.42
+            splitView.setPosition(pos, ofDividerAt: 0)
         }
     }
 
@@ -1001,11 +1044,19 @@ final class GitPanelView: NSView {
 
 extension GitPanelView: NSSplitViewDelegate {
     func splitView(_ splitView: NSSplitView, constrainMinCoordinate proposedMin: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
-        return 80
+        return changesCollapsed ? 26 : 80
     }
 
     func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMax: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
-        return splitView.bounds.height - 120
+        let h = splitView.bounds.height
+        return historyCollapsed ? h - 26 - splitView.dividerThickness : h - 120
+    }
+
+    func splitViewDidResizeSubviews(_ notification: Notification) {
+        // Remember the divider position so we can restore it after un-collapsing.
+        guard !changesCollapsed, !historyCollapsed else { return }
+        let pos = splitView.arrangedSubviews.first?.frame.height ?? 0
+        if pos > 30 { lastExpandedDividerPosition = pos }
     }
 }
 
@@ -1299,47 +1350,145 @@ private final class GitPanelChipButton: NSButton {
 // MARK: - Action button (Pull/Push with optional badge)
 
 private final class GitPanelActionButton: NSButton {
+    enum Style { case primary, secondary }
+
     var badgeValue: String? {
-        didSet { updateTitle() }
+        didSet { updateDisplayTitle() }
     }
 
     var isLoading: Bool = false {
         didSet {
             isEnabled = !isLoading
-            if isLoading { startSpin() } else { stopSpin() }
+            if isLoading {
+                labelView.stringValue = "…"
+            } else {
+                updateDisplayTitle()
+            }
         }
     }
 
     private let symbolName: String
     private let baseTitle: String
+    private let style: Style
 
-    init(title: String, symbolName: String) {
+    private let iconView = NSImageView()
+    private let labelView = NSTextField(labelWithString: "")
+    private var trackingAreaRef: NSTrackingArea?
+    private var isHovered = false
+
+    init(title: String, symbolName: String, style: Style = .secondary) {
         self.baseTitle = title
         self.symbolName = symbolName
+        self.style = style
         super.init(frame: .zero)
-        bezelStyle = .rounded
-        controlSize = .small
-        image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
-        imagePosition = .imageLeading
-        font = Theme.Fonts.label(size: 11)
-        self.title = title
+
+        // Neutralize NSButton's own drawing so the layer + subviews own the appearance.
+        bezelStyle = .inline
+        isBordered = false
+        imagePosition = .noImage
+        super.title = ""
+        super.attributedTitle = NSAttributedString(string: "")
+        wantsLayer = true
+        layer?.cornerRadius = Theme.CornerRadius.element
+
+        iconView.translatesAutoresizingMaskIntoConstraints = false
+        iconView.imageScaling = .scaleProportionallyUpOrDown
+        iconView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 10, weight: .semibold))
+        addSubview(iconView)
+
+        labelView.translatesAutoresizingMaskIntoConstraints = false
+        labelView.font = Theme.Fonts.label(size: 11)
+        labelView.stringValue = title
+        labelView.backgroundColor = .clear
+        labelView.isBezeled = false
+        labelView.isEditable = false
+        labelView.isSelectable = false
+        addSubview(labelView)
+
+        NSLayoutConstraint.activate([
+            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 9),
+            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            iconView.widthAnchor.constraint(equalToConstant: 11),
+            iconView.heightAnchor.constraint(equalToConstant: 11),
+
+            labelView.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 5),
+            labelView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            labelView.centerYAnchor.constraint(equalTo: centerYAnchor),
+        ])
+
+        applyTheme()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
-    private func updateTitle() {
-        if let badge = badgeValue, !badge.isEmpty {
-            title = "\(baseTitle) \(badge)"
-        } else {
-            title = baseTitle
-        }
+    override var intrinsicContentSize: NSSize {
+        labelView.sizeToFit()
+        return NSSize(width: labelView.frame.width + 9 + 11 + 5 + 10, height: 24)
     }
 
-    private func startSpin() {
-        title = "…"
+    override var isEnabled: Bool {
+        didSet { applyTheme() }
     }
-    private func stopSpin() {
-        updateTitle()
+
+    private func updateDisplayTitle() {
+        let base = baseTitle
+        labelView.stringValue = (badgeValue?.isEmpty == false) ? "\(base) \(badgeValue!)" : base
+        invalidateIntrinsicContentSize()
+    }
+
+    private func applyTheme() {
+        let bg: NSColor
+        let border: NSColor
+        let fg: NSColor
+        switch style {
+        case .primary:
+            bg = isEnabled
+                ? (isHovered ? Theme.primary.blended(withFraction: 0.10, of: .white) ?? Theme.primary : Theme.primary)
+                : Theme.primary.withAlphaComponent(0.35)
+            border = .clear
+            fg = isEnabled ? Theme.onPrimary : Theme.onPrimary.withAlphaComponent(0.7)
+        case .secondary:
+            bg = isEnabled
+                ? (isHovered ? Theme.hoverBg : Theme.surfaceContainerHigh)
+                : Theme.surfaceContainerHigh.withAlphaComponent(0.35)
+            border = Theme.outline.withAlphaComponent(0.35)
+            fg = isEnabled ? Theme.primaryText : Theme.tertiaryText
+        }
+        layer?.backgroundColor = bg.cgColor
+        layer?.borderWidth = style == .secondary ? 1 : 0
+        layer?.borderColor = border.cgColor
+        labelView.textColor = fg
+        iconView.contentTintColor = fg
+        iconView.alphaValue = isEnabled ? 1.0 : 0.6
+    }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let existing = trackingAreaRef { removeTrackingArea(existing) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        trackingAreaRef = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isHovered = true
+        applyTheme()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isHovered = false
+        applyTheme()
+    }
+
+    override func layout() {
+        super.layout()
+        applyTheme()
     }
 }
 
@@ -1352,6 +1501,12 @@ private final class SectionHeaderView: NSView {
         let handler: () -> Void
     }
 
+    var onToggle: (() -> Void)?
+    var isCollapsed: Bool = false {
+        didSet { updateChevron() }
+    }
+
+    private let chevronIcon = NSImageView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let countLabel = NSTextField(labelWithString: "")
     private let actionStack = NSStackView()
@@ -1361,6 +1516,11 @@ private final class SectionHeaderView: NSView {
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = Theme.sidebarBg.withAlphaComponent(0.65).cgColor
+
+        chevronIcon.translatesAutoresizingMaskIntoConstraints = false
+        chevronIcon.imageScaling = .scaleProportionallyUpOrDown
+        chevronIcon.contentTintColor = Theme.tertiaryText
+        addSubview(chevronIcon)
 
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         titleLabel.font = Theme.Fonts.label(size: 10)
@@ -1387,7 +1547,12 @@ private final class SectionHeaderView: NSView {
         addSubview(actionStack)
 
         NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            chevronIcon.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            chevronIcon.centerYAnchor.constraint(equalTo: centerYAnchor),
+            chevronIcon.widthAnchor.constraint(equalToConstant: 9),
+            chevronIcon.heightAnchor.constraint(equalToConstant: 9),
+
+            titleLabel.leadingAnchor.constraint(equalTo: chevronIcon.trailingAnchor, constant: 5),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
 
             countLabel.leadingAnchor.constraint(equalTo: titleLabel.trailingAnchor, constant: 6),
@@ -1396,6 +1561,21 @@ private final class SectionHeaderView: NSView {
             actionStack.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             actionStack.centerYAnchor.constraint(equalTo: centerYAnchor),
         ])
+
+        updateChevron()
+    }
+
+    private func updateChevron() {
+        let symbol = isCollapsed ? "chevron.right" : "chevron.down"
+        chevronIcon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 9, weight: .semibold))
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        // Clicks on child buttons go to those buttons directly (hit-test). We only
+        // receive mouseDown when the user clicks on empty header area — treat that
+        // as a toggle so the whole row feels clickable.
+        onToggle?()
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -1436,6 +1616,7 @@ private final class SectionHeaderView: NSView {
         layer?.backgroundColor = Theme.sidebarBg.withAlphaComponent(0.65).cgColor
         titleLabel.textColor = Theme.tertiaryText
         countLabel.textColor = Theme.quaternaryText
+        chevronIcon.contentTintColor = Theme.tertiaryText
         for view in actionStack.arrangedSubviews {
             (view as? DimIconButton)?.refreshDimState()
         }
