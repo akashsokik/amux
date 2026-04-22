@@ -73,6 +73,28 @@ enum TaskAutoDetect {
         return out
     }
 
-    // Stubs — filled by later tasks.
-    static func procfile(at worktreePath: String) -> [RunnerTask] { [] }
+    // MARK: - Procfile
+
+    static func procfile(at worktreePath: String) -> [RunnerTask] {
+        let url = URL(fileURLWithPath: worktreePath).appendingPathComponent("Procfile")
+        guard let content = try? String(contentsOf: url, encoding: .utf8) else { return [] }
+        var out: [RunnerTask] = []
+        for raw in content.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespaces)
+            if line.isEmpty || line.hasPrefix("#") { continue }
+            guard let colon = line.firstIndex(of: ":") else { continue }
+            let name = String(line[..<colon]).trimmingCharacters(in: .whitespaces)
+            let cmd  = String(line[line.index(after: colon)...]).trimmingCharacters(in: .whitespaces)
+            guard !name.isEmpty, !cmd.isEmpty else { continue }
+            out.append(RunnerTask(
+                id: "procfile:\(name)",
+                name: name,
+                command: cmd,
+                cwd: nil,
+                source: .procfile,
+                isOverridden: false
+            ))
+        }
+        return out
+    }
 }
