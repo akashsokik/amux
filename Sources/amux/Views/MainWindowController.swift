@@ -692,6 +692,22 @@ extension MainWindowController: GitPanelViewDelegate {
     func gitPanelDidRequestOpenWorktree(path: String) {
         openWorktreeAsNewSession(path: path)
     }
+
+    func gitPanelDidRequestOpenDiff(filePath: String, staged: Bool, repoRoot: String) {
+        // Open the diff as a tab on the currently focused pane so it lives
+        // alongside terminals and uses the same tab bar + shortcuts.
+        guard let session = sessionManager.activeSession,
+              let focusedID = session.focusedPaneID,
+              let pane = splitContainerView.pane(for: focusedID) else { return }
+        pane.addDiffTab(filePath: filePath, staged: staged, repoRoot: repoRoot)
+    }
+
+    func gitPanelDidRequestOpenCommit(hash: String, repoRoot: String) {
+        guard let session = sessionManager.activeSession,
+              let focusedID = session.focusedPaneID,
+              let pane = splitContainerView.pane(for: focusedID) else { return }
+        pane.addCommitDetailTab(hash: hash, repoRoot: repoRoot)
+    }
 }
 
 // MARK: - RightSidebarViewDelegate

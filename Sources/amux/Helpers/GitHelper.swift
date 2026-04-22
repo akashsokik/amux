@@ -384,6 +384,140 @@ enum GitHelper {
         let refs: [String]
     }
 
+    // MARK: - Diff
+
+    /// Unified diff for a single path. `staged == true` returns the index-vs-HEAD
+    /// diff; otherwise the working-tree-vs-index diff. Untracked files are detected
+    /// by falling back to a full-file "diff vs /dev/null" so the viewer can show
+    /// them as a solid block of additions.
+    static func diff(from root: String, path: String, staged: Bool) -> String? {
+        var args = ["-c", "color.ui=never", "diff", "-U3"]
+        if staged { args.append("--cached") }
+        args.append("--")
+        args.append(path)
+        if let out = run(args, in: root), !out.isEmpty {
+            return out
+        }
+        // Untracked file — `git diff` returns nothing; synthesize a diff
+        // against /dev/null so the user still sees the contents.
+        // Note: `git diff --no-index` exits 1 when differences exist, so we
+        // need `runDetailed` to read stdout regardless of exit code.
+        if !staged {
+            let full = (root as NSString).appendingPathComponent(path)
+            if FileManager.default.fileExists(atPath: full) {
+                let res = runDetailed(
+                    ["-c", "color.ui=never", "diff", "--no-index", "-U3", "--", "/dev/null", path],
+                    in: root
+                )
+                return res.stdout
+            }
+        }
+        return ""
+    }
+
+    // MARK: - Commit details
+
+    struct CommitDetail {
+        let hash: String
+        let shortHash: String
+        let subject: String
+        let body: String
+        let authorName: String
+        let authorEmail: String
+        let authorDate: String     // ISO-8601 or relative — kept as-is from git
+        let relativeDate: String
+        let parents: [String]      // parent hashes
+        let files: [FileStatus]
+    }
+
+    /// Rich metadata for a single commit + list of files changed in it.
+    static func commitDetail(from root: String, hash: String) -> CommitDetail? {
+        let fieldSep = "\u{1F}"
+        let format = ["%H", "%h", "%s", "%b", "%an", "%ae", "%aI", "%ar", "%P"].joined(separator: fieldSep)
+        guard let raw = run(
+            ["show", "-s", "--pretty=format:\(format)", hash],
+            in: root
+        ) else { return nil }
+        let parts = raw.components(separatedBy: fieldSep)
+        guard parts.count >= 9 else { return nil }
+        let parents = parts[8].split(separator: " ").map(String.init)
+
+        let files = commitFiles(from: root, hash: hash, firstParent: parents.first)
+        return CommitDetail(
+            hash: parts[0],
+            shortHash: parts[1],
+            subject: parts[2],
+            body: parts[3].trimmingCharacters(in: .whitespacesAndNewlines),
+            authorName: parts[4],
+            authorEmail: parts[5],
+            authorDate: parts[6],
+            relativeDate: parts[7],
+            parents: parents,
+            files: files
+        )
+    }
+
+    /// Files changed by a commit, with line deltas. Uses the first parent for
+    /// merges to keep output consistent with typical "commit view" behavior.
+    static func commitFiles(from root: String, hash: String, firstParent: String?) -> [FileStatus] {
+        // --numstat gives: added\tremoved\tpath  (or "-\t-\t" for binary)
+        // --name-status gives: A|M|D|R<score>\tpath  (or old\tnew for renames)
+        var args = ["show", "--numstat", "--name-status", "--format=", hash]
+        if firstParent == nil || firstParent!.isEmpty {
+            // First-commit case; still works with `git show`.
+            args = ["show", "--numstat", "--name-status", "--format=", hash]
+        }
+        guard let out = run(args, in: root) else { return [] }
+
+        // --numstat and --name-status interleave oddly; re-run each
+        // independently and merge by path so we don't need to parse the mix.
+        var deltas: [String: (added: Int, removed: Int)] = [:]
+        if let num = run(["show", "--numstat", "--format=", hash], in: root) {
+            for line in num.components(separatedBy: "\n") {
+                let cols = line.split(separator: "\t", omittingEmptySubsequences: false)
+                guard cols.count >= 3 else { continue }
+                let added = Int(cols[0]) ?? 0
+                let removed = Int(cols[1]) ?? 0
+                let path = cols.last.map(String.init) ?? ""
+                if !path.isEmpty {
+                    deltas[path] = (added, removed)
+                }
+            }
+        }
+
+        var result: [FileStatus] = []
+        for line in out.components(separatedBy: "\n") {
+            let cols = line.split(separator: "\t", omittingEmptySubsequences: false)
+            guard cols.count >= 2 else { continue }
+            let status = String(cols[0])
+            // Rename rows have three columns: "R100\tOLD\tNEW". Treat target as the path.
+            let path: String = cols.count >= 3 ? String(cols.last!) : String(cols[1])
+            let kind: FileStatus.Kind
+            switch status.first {
+            case "A": kind = .staged
+            case "D": kind = .deleted
+            case "R": kind = .renamed
+            case "M", "T": kind = .modified
+            default: kind = .modified
+            }
+            let d = deltas[path] ?? (0, 0)
+            result.append(FileStatus(
+                path: path, kind: kind, linesAdded: d.added, linesRemoved: d.removed
+            ))
+        }
+        return result
+    }
+
+    /// Diff a single path at a specific commit (commit vs its first parent).
+    static func diffAtCommit(from root: String, hash: String, path: String) -> String? {
+        // `git show <hash> -- <path>` returns the commit's changes scoped to
+        // a single file. Works even for root commits (compares against empty tree).
+        return run(
+            ["-c", "color.ui=never", "show", "--format=", "-U3", hash, "--", path],
+            in: root
+        )
+    }
+
     static func log(from cwd: String, limit: Int = 100) -> [CommitInfo] {
         // Separator sequences chosen to be extremely unlikely to appear in commit data.
         let fieldSep = "\u{1F}"

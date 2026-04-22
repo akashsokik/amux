@@ -33,7 +33,7 @@ final class RightSidebarView: NSView {
     let editorSidebarView: EditorSidebarView
     let gitPanelView: GitPanelView
 
-    private(set) var mode: RightSidebarMode = .editor
+    private(set) var mode: RightSidebarMode = .git
 
     // MARK: - Init
 
@@ -126,12 +126,12 @@ final class RightSidebarView: NSView {
         iconBar.translatesAutoresizingMaskIntoConstraints = false
         addSubview(iconBar)
 
-        editorButton = makeIconBarButton(symbol: "chevron.left.forwardslash.chevron.right", action: #selector(editorButtonClicked))
-        editorButton.isActiveState = true
-        iconBar.addSubview(editorButton)
-
         gitButton = makeIconBarButton(symbol: "arrow.triangle.branch", action: #selector(gitButtonClicked))
+        gitButton.isActiveState = true
         iconBar.addSubview(gitButton)
+
+        editorButton = makeIconBarButton(symbol: "chevron.left.forwardslash.chevron.right", action: #selector(editorButtonClicked))
+        iconBar.addSubview(editorButton)
 
         collapseButton = makeIconBarButton(symbol: "chevron.right.2", action: #selector(collapseClicked))
         collapseButton.toolTip = "Collapse sidebar"
@@ -191,15 +191,15 @@ final class RightSidebarView: NSView {
             iconBar.trailingAnchor.constraint(equalTo: trailingAnchor),
             iconBar.heightAnchor.constraint(equalToConstant: 30),
 
-            editorButton.leadingAnchor.constraint(equalTo: iconBar.leadingAnchor, constant: 10),
-            editorButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
-            editorButton.widthAnchor.constraint(equalToConstant: 24),
-            editorButton.heightAnchor.constraint(equalToConstant: 24),
-
-            gitButton.leadingAnchor.constraint(equalTo: editorButton.trailingAnchor, constant: 6),
+            gitButton.leadingAnchor.constraint(equalTo: iconBar.leadingAnchor, constant: 10),
             gitButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
             gitButton.widthAnchor.constraint(equalToConstant: 24),
             gitButton.heightAnchor.constraint(equalToConstant: 24),
+
+            editorButton.leadingAnchor.constraint(equalTo: gitButton.trailingAnchor, constant: 6),
+            editorButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
+            editorButton.widthAnchor.constraint(equalToConstant: 24),
+            editorButton.heightAnchor.constraint(equalToConstant: 24),
 
             collapseButton.trailingAnchor.constraint(equalTo: iconBar.trailingAnchor, constant: -10),
             collapseButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),

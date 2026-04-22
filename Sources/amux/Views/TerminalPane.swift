@@ -3,9 +3,16 @@ import CGhostty
 
 // MARK: - Tab Model
 
+enum PaneTabKind {
+    case terminal
+    case diff
+    case commitDetail
+}
+
 struct PaneTab {
     let id: UUID
     var title: String = "Terminal"
+    var kind: PaneTabKind = .terminal
 }
 
 // MARK: - Drop Edge
@@ -49,6 +56,17 @@ class TerminalPane: NSView {
     private(set) var tabs: [PaneTab] = []
     private(set) var activeTabID: UUID?
     private var terminalViewsByTab: [UUID: GhosttyTerminalView] = [:]
+    private var diffViewsByTab: [UUID: DiffTabView] = [:]
+    private var commitDetailViewsByTab: [UUID: CommitDetailTabView] = [:]
+
+    /// Content view (terminal / diff / commit detail) backing the given tab.
+    private func contentView(forTabID id: UUID) -> NSView? {
+        return terminalViewsByTab[id] ?? diffViewsByTab[id] ?? commitDetailViewsByTab[id]
+    }
+
+    private func tabKind(_ id: UUID) -> PaneTabKind {
+        return tabs.first(where: { $0.id == id })?.kind ?? .terminal
+    }
 
     // MARK: - Views
 
@@ -263,6 +281,10 @@ class TerminalPane: NSView {
 
         if let tv = terminalViewsByTab.removeValue(forKey: tabID) {
             tv.removeFromSuperview()
+        } else if let dv = diffViewsByTab.removeValue(forKey: tabID) {
+            dv.removeFromSuperview()
+        } else if let cv = commitDetailViewsByTab.removeValue(forKey: tabID) {
+            cv.removeFromSuperview()
         }
         tabs.remove(at: idx)
 
@@ -281,6 +303,99 @@ class TerminalPane: NSView {
         refreshTabBar()
     }
 
+    // MARK: - Diff tab
+
+    /// Open a diff tab for the given file. If a matching diff tab already exists
+    /// in this pane, switch to it and reload its content instead of duplicating.
+    func addDiffTab(filePath: String, staged: Bool, repoRoot: String) {
+        let scope: DiffScope = staged ? .index : .workingTree
+        addDiffTab(filePath: filePath, scope: scope, repoRoot: repoRoot)
+    }
+
+    /// Open a diff tab with an explicit scope (working tree, index, or a
+    /// specific commit). Existing tabs matching the same (path, scope) are
+    /// reused.
+    func addDiffTab(filePath: String, scope: DiffScope, repoRoot: String) {
+        for tab in tabs where tab.kind == .diff {
+            if let dv = diffViewsByTab[tab.id], dv.matches(filePath: filePath, scope: scope) {
+                if activeTabID != tab.id { switchToTab(tab.id) }
+                dv.reload()
+                return
+            }
+        }
+
+        let tabID = UUID()
+        let title = URL(fileURLWithPath: filePath).lastPathComponent
+        let tab = PaneTab(id: tabID, title: title, kind: .diff)
+
+        if let activeID = activeTabID,
+           let idx = tabs.firstIndex(where: { $0.id == activeID }) {
+            tabs.insert(tab, at: idx + 1)
+        } else {
+            tabs.append(tab)
+        }
+
+        if let currentID = activeTabID {
+            terminalViewsByTab[currentID]?.isHidden = true
+            terminalViewsByTab[currentID]?.isFocused = false
+            diffViewsByTab[currentID]?.isHidden = true
+            commitDetailViewsByTab[currentID]?.isHidden = true
+        }
+
+        let dv = DiffTabView(filePath: filePath, scope: scope, repoRoot: repoRoot)
+        diffViewsByTab[tabID] = dv
+        addSubview(dv)
+        activeTabID = tabID
+
+        layoutTerminalViews()
+        refreshTabBar()
+    }
+
+    /// Open a commit-detail tab for the given commit hash. Reuses an existing
+    /// commit-detail tab in this pane if one is already open for the hash.
+    func addCommitDetailTab(hash: String, repoRoot: String) {
+        for tab in tabs where tab.kind == .commitDetail {
+            if let cv = commitDetailViewsByTab[tab.id], cv.matches(hash: hash) {
+                if activeTabID != tab.id { switchToTab(tab.id) }
+                cv.reload()
+                return
+            }
+        }
+
+        let tabID = UUID()
+        let shortHash = String(hash.prefix(7))
+        let tab = PaneTab(id: tabID, title: shortHash, kind: .commitDetail)
+
+        if let activeID = activeTabID,
+           let idx = tabs.firstIndex(where: { $0.id == activeID }) {
+            tabs.insert(tab, at: idx + 1)
+        } else {
+            tabs.append(tab)
+        }
+
+        if let currentID = activeTabID {
+            terminalViewsByTab[currentID]?.isHidden = true
+            terminalViewsByTab[currentID]?.isFocused = false
+            diffViewsByTab[currentID]?.isHidden = true
+            commitDetailViewsByTab[currentID]?.isHidden = true
+        }
+
+        let cv = CommitDetailTabView(hash: hash, repoRoot: repoRoot)
+        cv.onRequestOpenFile = { [weak self] path, commitHash in
+            self?.addDiffTab(
+                filePath: path,
+                scope: .commit(hash: commitHash),
+                repoRoot: repoRoot
+            )
+        }
+        commitDetailViewsByTab[tabID] = cv
+        addSubview(cv)
+        activeTabID = tabID
+
+        layoutTerminalViews()
+        refreshTabBar()
+    }
+
     func closeActiveTab() {
         guard let id = activeTabID else { return }
         closeTab(id)
@@ -293,23 +408,29 @@ class TerminalPane: NSView {
     }
 
     func switchToTab(_ tabID: UUID) {
-        guard tabID != activeTabID, terminalViewsByTab[tabID] != nil else { return }
+        guard tabID != activeTabID, contentView(forTabID: tabID) != nil else { return }
 
         // Hide current
         if let currentID = activeTabID {
             terminalViewsByTab[currentID]?.isHidden = true
             terminalViewsByTab[currentID]?.isFocused = false
+            diffViewsByTab[currentID]?.isHidden = true
+            commitDetailViewsByTab[currentID]?.isHidden = true
         }
 
         activeTabID = tabID
-        let tv = terminalViewsByTab[tabID]!
-        tv.isHidden = false
-        tv.isFocused = isFocused
+        if let tv = terminalViewsByTab[tabID] {
+            tv.isHidden = false
+            tv.isFocused = isFocused
+            if isFocused { tv.focus() }
+        } else if let dv = diffViewsByTab[tabID] {
+            dv.isHidden = false
+        } else if let cv = commitDetailViewsByTab[tabID] {
+            cv.isHidden = false
+        }
 
         layoutTerminalViews()
         refreshTabBar()
-
-        if isFocused { tv.focus() }
 
         if let tab = tabs.first(where: { $0.id == tabID }) {
             delegate?.terminalPane(self, didUpdateTitle: tab.title)
@@ -331,8 +452,10 @@ class TerminalPane: NSView {
     // MARK: - Tab Transfer (Drag & Drop)
 
     /// Remove a tab without destroying its terminal view. Returns the tab model and view for re-insertion elsewhere.
+    /// Diff tabs cannot be extracted (they live where they were opened).
     func extractTab(_ tabID: UUID) -> (PaneTab, GhosttyTerminalView)? {
         guard let idx = tabs.firstIndex(where: { $0.id == tabID }),
+              tabs[idx].kind == .terminal,
               let tv = terminalViewsByTab.removeValue(forKey: tabID) else { return nil }
 
         let tab = tabs[idx]
@@ -442,6 +565,14 @@ class TerminalPane: NSView {
         for (id, tv) in terminalViewsByTab {
             tv.frame = terminalFrame
             tv.isHidden = (id != activeTabID)
+        }
+        for (id, dv) in diffViewsByTab {
+            dv.frame = terminalFrame
+            dv.isHidden = (id != activeTabID)
+        }
+        for (id, cv) in commitDetailViewsByTab {
+            cv.frame = terminalFrame
+            cv.isHidden = (id != activeTabID)
         }
     }
 

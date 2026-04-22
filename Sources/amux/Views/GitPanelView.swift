@@ -4,6 +4,8 @@ import AppKit
 
 protocol GitPanelViewDelegate: AnyObject {
     func gitPanelDidRequestOpenWorktree(path: String)
+    func gitPanelDidRequestOpenDiff(filePath: String, staged: Bool, repoRoot: String)
+    func gitPanelDidRequestOpenCommit(hash: String, repoRoot: String)
 }
 
 // MARK: - Git Panel View
@@ -21,10 +23,11 @@ final class GitPanelView: NSView {
     // Header
     private var repoButton: GitPanelChipButton!
     private var branchButton: GitPanelChipButton!
-    private var createPRButton: NSButton!
+    private var createPRButton: GitPanelActionButton!
     private var refreshButton: DimIconButton!
 
     // Commit box
+    private var commitBoxContainer: NSView!
     private var commitScroll: NSScrollView!
     private var commitTextView: CommitTextView!
     private var commitButton: GitPanelActionButton!
@@ -186,16 +189,10 @@ final class GitPanelView: NSView {
         branchButton.action = #selector(branchClicked)
         addSubview(branchButton)
 
-        createPRButton = NSButton(title: "Create PR", target: self, action: #selector(createPRClicked))
+        createPRButton = GitPanelActionButton(title: "Create PR", symbolName: "arrow.up.right.square")
         createPRButton.translatesAutoresizingMaskIntoConstraints = false
-        createPRButton.bezelStyle = .rounded
-        createPRButton.controlSize = .small
-        createPRButton.font = Theme.Fonts.label(size: 11)
-        createPRButton.image = NSImage(
-            systemSymbolName: "arrow.up.right.square",
-            accessibilityDescription: "Create PR"
-        )
-        createPRButton.imagePosition = .imageLeading
+        createPRButton.target = self
+        createPRButton.action = #selector(createPRClicked)
         addSubview(createPRButton)
 
         let refreshImage = NSImage(
@@ -210,16 +207,32 @@ final class GitPanelView: NSView {
     }
 
     private func setupCommitBox() {
+        // NSScrollView swaps its own backing layer around internally, which drops
+        // any border set on `commitScroll.layer`. Own the chrome with a dedicated
+        // container view and put the (chromeless) scroll view inside it.
+        commitBoxContainer = NSView()
+        commitBoxContainer.translatesAutoresizingMaskIntoConstraints = false
+        commitBoxContainer.wantsLayer = true
+        commitBoxContainer.layer?.cornerRadius = Theme.CornerRadius.element
+        commitBoxContainer.layer?.borderWidth = 1
+        commitBoxContainer.layer?.borderColor = Theme.outline.withAlphaComponent(0.35).cgColor
+        commitBoxContainer.layer?.backgroundColor = Theme.surfaceContainerLowest.cgColor
+        commitBoxContainer.layer?.masksToBounds = true
+        addSubview(commitBoxContainer)
+
         commitScroll = NSScrollView()
         commitScroll.translatesAutoresizingMaskIntoConstraints = false
         commitScroll.hasVerticalScroller = true
         commitScroll.drawsBackground = false
         commitScroll.borderType = .noBorder
-        commitScroll.wantsLayer = true
-        commitScroll.layer?.cornerRadius = Theme.CornerRadius.element
-        commitScroll.layer?.borderWidth = 1
-        commitScroll.layer?.borderColor = Theme.outline.withAlphaComponent(0.35).cgColor
-        commitScroll.layer?.backgroundColor = Theme.surfaceContainerLowest.cgColor
+        commitBoxContainer.addSubview(commitScroll)
+
+        NSLayoutConstraint.activate([
+            commitScroll.topAnchor.constraint(equalTo: commitBoxContainer.topAnchor),
+            commitScroll.bottomAnchor.constraint(equalTo: commitBoxContainer.bottomAnchor),
+            commitScroll.leadingAnchor.constraint(equalTo: commitBoxContainer.leadingAnchor),
+            commitScroll.trailingAnchor.constraint(equalTo: commitBoxContainer.trailingAnchor),
+        ])
 
         let textView = CommitTextView()
         textView.isRichText = false
@@ -237,7 +250,6 @@ final class GitPanelView: NSView {
 
         commitScroll.documentView = textView
         commitTextView = textView
-        addSubview(commitScroll)
     }
 
     private func setupActionRow() {
@@ -278,6 +290,7 @@ final class GitPanelView: NSView {
         changesHeader.configureActions([
             SectionHeaderView.Action(symbol: "checklist", tooltip: "Stage all", handler: { [weak self] in self?.stageAllClicked() }),
             SectionHeaderView.Action(symbol: "arrow.uturn.backward", tooltip: "Discard all", handler: { [weak self] in self?.discardAllClicked() }),
+            SectionHeaderView.Action(symbol: "arrow.clockwise", tooltip: "Refresh", handler: { [weak self] in self?.refresh(cwd: self?.currentCwd) }),
         ])
         changesHeader.onToggle = { [weak self] in self?.toggleChangesCollapsed() }
         changesContainer.addSubview(changesHeader)
@@ -293,6 +306,7 @@ final class GitPanelView: NSView {
         changesOutline.backgroundColor = .clear
         changesOutline.menu = createChangesMenu()
         changesOutline.target = self
+        changesOutline.action = #selector(changeClicked)
         changesOutline.doubleAction = #selector(changeDoubleClicked)
 
         let changesColumn = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("GitPanelChangesColumn"))
@@ -329,6 +343,9 @@ final class GitPanelView: NSView {
 
         historyHeader = SectionHeaderView(title: "HISTORY")
         historyHeader.translatesAutoresizingMaskIntoConstraints = false
+        historyHeader.configureActions([
+            SectionHeaderView.Action(symbol: "arrow.clockwise", tooltip: "Refresh", handler: { [weak self] in self?.refresh(cwd: self?.currentCwd) }),
+        ])
         historyHeader.onToggle = { [weak self] in self?.toggleHistoryCollapsed() }
         historyContainer.addSubview(historyHeader)
 
@@ -420,13 +437,13 @@ final class GitPanelView: NSView {
             refreshButton.heightAnchor.constraint(equalToConstant: 22),
 
             // Commit textarea
-            commitScroll.topAnchor.constraint(equalTo: repoButton.bottomAnchor, constant: 10),
-            commitScroll.leadingAnchor.constraint(equalTo: separatorLine.trailingAnchor, constant: 10),
-            commitScroll.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            commitScroll.heightAnchor.constraint(equalToConstant: 90),
+            commitBoxContainer.topAnchor.constraint(equalTo: repoButton.bottomAnchor, constant: 10),
+            commitBoxContainer.leadingAnchor.constraint(equalTo: separatorLine.trailingAnchor, constant: 10),
+            commitBoxContainer.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            commitBoxContainer.heightAnchor.constraint(equalToConstant: 90),
 
             // Action row
-            commitButton.topAnchor.constraint(equalTo: commitScroll.bottomAnchor, constant: 8),
+            commitButton.topAnchor.constraint(equalTo: commitBoxContainer.bottomAnchor, constant: 8),
             commitButton.leadingAnchor.constraint(equalTo: separatorLine.trailingAnchor, constant: 10),
             commitButton.trailingAnchor.constraint(lessThanOrEqualTo: pullButton.leadingAnchor, constant: -6),
             commitButton.heightAnchor.constraint(equalToConstant: 22),
@@ -535,8 +552,8 @@ final class GitPanelView: NSView {
     @objc private func themeDidChange() {
         applyGlassOrSolid()
         separatorLine.layer?.backgroundColor = Theme.outlineVariant.cgColor
-        commitScroll.layer?.borderColor = Theme.outline.withAlphaComponent(0.35).cgColor
-        commitScroll.layer?.backgroundColor = Theme.surfaceContainerLowest.cgColor
+        commitBoxContainer.layer?.borderColor = Theme.outline.withAlphaComponent(0.35).cgColor
+        commitBoxContainer.layer?.backgroundColor = Theme.surfaceContainerLowest.cgColor
         commitTextView.textColor = Theme.primaryText
         commitTextView.font = Theme.Fonts.body(size: 12)
         refreshButton.refreshDimState()
@@ -638,7 +655,7 @@ final class GitPanelView: NSView {
         branchButton.isHidden = hidden
         createPRButton.isHidden = hidden
         refreshButton.isHidden = hidden
-        commitScroll.isHidden = hidden
+        commitBoxContainer.isHidden = hidden
         commitButton.isHidden = hidden
         pullButton.isHidden = hidden
         pushButton.isHidden = hidden
@@ -859,7 +876,10 @@ final class GitPanelView: NSView {
     }
 
     @objc private func historyClicked() {
-        // Reserved for future: could show commit details / diff here.
+        let row = historyTable.clickedRow
+        guard row >= 0, row < commits.count, let root = repoRoot else { return }
+        let commit = commits[row]
+        delegate?.gitPanelDidRequestOpenCommit(hash: commit.hash, repoRoot: root)
     }
 
     // MARK: - Changes interactions
@@ -870,6 +890,15 @@ final class GitPanelView: NSView {
               let file = changesOutline.item(atRow: row) as? GitHelper.FileStatus,
               let root = repoRoot else { return }
         toggleStage(for: file, root: root)
+    }
+
+    @objc private func changeClicked() {
+        let row = changesOutline.clickedRow
+        guard row >= 0,
+              let file = changesOutline.item(atRow: row) as? GitHelper.FileStatus,
+              let root = repoRoot else { return }
+        let staged = (file.kind == .staged || file.kind == .renamed)
+        delegate?.gitPanelDidRequestOpenDiff(filePath: file.path, staged: staged, repoRoot: root)
     }
 
     private func toggleStage(for file: GitHelper.FileStatus, root: String) {
@@ -1349,7 +1378,7 @@ private final class GitPanelChipButton: NSButton {
 
 // MARK: - Action button (Pull/Push with optional badge)
 
-private final class GitPanelActionButton: NSButton {
+final class GitPanelActionButton: NSButton {
     enum Style { case primary, secondary }
 
     var badgeValue: String? {
@@ -1443,11 +1472,18 @@ private final class GitPanelActionButton: NSButton {
         let fg: NSColor
         switch style {
         case .primary:
-            bg = isEnabled
-                ? (isHovered ? Theme.primary.blended(withFraction: 0.10, of: .white) ?? Theme.primary : Theme.primary)
-                : Theme.primary.withAlphaComponent(0.35)
-            border = .clear
-            fg = isEnabled ? Theme.onPrimary : Theme.onPrimary.withAlphaComponent(0.7)
+            if isEnabled {
+                bg = isHovered ? (Theme.primary.blended(withFraction: 0.10, of: .white) ?? Theme.primary) : Theme.primary
+                border = .clear
+                fg = Theme.onPrimary
+            } else {
+                // Disabled primary: neutral surface so the label remains legible,
+                // rather than tinted primary + tinted onPrimary (which end up too
+                // close in luminance and look washed out).
+                bg = Theme.surfaceContainerHigh.withAlphaComponent(0.35)
+                border = Theme.outline.withAlphaComponent(0.25)
+                fg = Theme.tertiaryText
+            }
         case .secondary:
             bg = isEnabled
                 ? (isHovered ? Theme.hoverBg : Theme.surfaceContainerHigh)
@@ -1456,7 +1492,10 @@ private final class GitPanelActionButton: NSButton {
             fg = isEnabled ? Theme.primaryText : Theme.tertiaryText
         }
         layer?.backgroundColor = bg.cgColor
-        layer?.borderWidth = style == .secondary ? 1 : 0
+        // Show a border whenever one was requested (secondary, or disabled primary
+        // which falls back to a neutral chip look).
+        let wantsBorder = (style == .secondary) || (style == .primary && !isEnabled)
+        layer?.borderWidth = wantsBorder ? 1 : 0
         layer?.borderColor = border.cgColor
         labelView.textColor = fg
         iconView.contentTintColor = fg
