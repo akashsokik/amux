@@ -123,12 +123,12 @@ final class RunnerTaskStore {
                     self.reload()
                     self.rearmFileWatch()
                 }
-                src.setCancelHandler { [weak self] in
-                    guard let self else { return }
-                    if self.dirFD >= 0 {
-                        Darwin.close(self.dirFD)
-                        self.dirFD = -1
-                    }
+                // Capture the fd locally so the cancel handler always closes
+                // THIS source's fd, even after `self.dirFD` is reassigned by
+                // a later startWatching/rearm cycle.
+                let capturedFD = fd
+                src.setCancelHandler {
+                    Darwin.close(capturedFD)
                 }
                 dirSource = src
                 src.resume()
@@ -139,21 +139,26 @@ final class RunnerTaskStore {
     }
 
     /// Stop watching. Called from deinit and before a restart.
+    /// Cancelling the sources asynchronously runs their cancel handlers,
+    /// which close the fds that were captured at source-creation time.
     func stopWatching() {
         fileSource?.cancel(); fileSource = nil
-        dirSource?.cancel(); dirSource = nil
+        dirSource?.cancel();  dirSource = nil
+        fileFD = -1
+        dirFD = -1
     }
 
     /// (Re-)open a watcher on `tasks.json`. We re-arm after any rename/delete
     /// because the original FD becomes useless once the inode is replaced
     /// (e.g. via atomic write).
     private func rearmFileWatch() {
+        // Cancel the previous source; its cancel handler will asynchronously
+        // close the old fd it captured at creation time. Don't close
+        // `self.fileFD` here — that would be a double-close once the cancel
+        // handler runs.
         fileSource?.cancel()
         fileSource = nil
-        if fileFD >= 0 {
-            Darwin.close(fileFD)
-            fileFD = -1
-        }
+        fileFD = -1
         let fd = open(pinnedFileURL.path, O_EVTONLY)
         guard fd >= 0 else { return }
         fileFD = fd
@@ -167,12 +172,12 @@ final class RunnerTaskStore {
             self.reload()
             self.rearmFileWatch()
         }
-        src.setCancelHandler { [weak self] in
-            guard let self else { return }
-            if self.fileFD >= 0 {
-                Darwin.close(self.fileFD)
-                self.fileFD = -1
-            }
+        // Capture the fd locally so the cancel handler always closes THIS
+        // source's fd, even after `self.fileFD` is reassigned by a later
+        // rearm cycle.
+        let capturedFD = fd
+        src.setCancelHandler {
+            Darwin.close(capturedFD)
         }
         fileSource = src
         src.resume()
