@@ -166,8 +166,10 @@ final class RunnerPanelView: NSView {
         wantsLayer = true
         layer?.backgroundColor = Theme.sidebarBg.cgColor
 
-        // Outline + scroll view host the task list.
-        outlineView = NSOutlineView()
+        // Outline + scroll view host the task list. Use RunnerOutlineView so
+        // right-click selects the row under the cursor before the context
+        // menu is built in menuNeedsUpdate.
+        outlineView = RunnerOutlineView()
         outlineView.headerView = nil
         outlineView.rowHeight = 22
         outlineView.intercellSpacing = NSSize(width: 0, height: 0)
@@ -180,6 +182,12 @@ final class RunnerPanelView: NSView {
         outlineView.target = self
         outlineView.action = #selector(outlineRowClicked)
         outlineView.doubleAction = #selector(outlineRowDoubleClicked)
+
+        // Context menu for right-click on pinned task rows. Items are built
+        // dynamically in menuNeedsUpdate based on the clicked row.
+        let contextMenu = NSMenu()
+        contextMenu.delegate = self
+        outlineView.menu = contextMenu
 
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("RunnerPanelColumn"))
         column.isEditable = false
@@ -837,6 +845,36 @@ final class RunnerPanelView: NSView {
         // Group rows: NSOutlineView handles expand/collapse itself.
     }
 
+    // MARK: - Context menu actions
+
+    @objc fileprivate func deletePinnedClicked(_ sender: NSMenuItem) {
+        guard let id = sender.representedObject as? String,
+              let store = store else { return }
+
+        // If the task is currently running, confirm before stopping + deleting.
+        if let session = runner.session(for: id, worktreePath: store.worktreePath),
+           session.status == .running {
+            let alert = NSAlert()
+            alert.messageText = "Delete task?"
+            alert.informativeText = "This task is currently running. It will be stopped and the entry removed."
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Delete")
+            alert.addButton(withTitle: "Cancel")
+            guard alert.runModal() == .alertFirstButtonReturn else { return }
+            runner.stop(id: id, worktreePath: store.worktreePath)
+        }
+
+        do {
+            try store.removePinned(id: id)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn't delete task"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+
     fileprivate func toggleRun(task: RunnerTask) {
         guard let worktreePath = store?.worktreePath else { return }
         // Route the log panel to the task being toggled, so the user sees
@@ -903,6 +941,31 @@ extension RunnerPanelView: NSSplitViewDelegate {
 
     func splitView(_ splitView: NSSplitView, constrainMaxCoordinate proposedMax: CGFloat, ofSubviewAt dividerIndex: Int) -> CGFloat {
         return splitView.bounds.height - 80
+    }
+}
+
+// MARK: - NSMenuDelegate (context menu for outline rows)
+
+extension RunnerPanelView: NSMenuDelegate {
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        menu.removeAllItems()
+        let row = outlineView.clickedRow
+        guard row >= 0,
+              let wrapper = outlineView.item(atRow: row) as? RunnerOutlineItem,
+              case .task(let task) = wrapper.kind,
+              task.source == .pinned else {
+            // Non-pinned rows (auto-detected, group headers) get no menu.
+            // Leaving the menu empty causes AppKit to skip presenting it.
+            return
+        }
+        let delete = NSMenuItem(
+            title: "Delete",
+            action: #selector(deletePinnedClicked(_:)),
+            keyEquivalent: ""
+        )
+        delete.target = self
+        delete.representedObject = task.id
+        menu.addItem(delete)
     }
 }
 
@@ -980,7 +1043,7 @@ extension RunnerPanelView: NSOutlineViewDataSource, NSOutlineViewDelegate {
 // Class so NSOutlineView can key off pointer identity — critical for
 // `reloadItem(_:)` to find the row when `TaskRunner` posts an update.
 
-private final class RunnerOutlineItem {
+fileprivate final class RunnerOutlineItem {
     enum Kind {
         case group(RunnerTaskSource)
         case task(RunnerTask)
@@ -997,6 +1060,24 @@ private final class RunnerOutlineItem {
             fatalError("RunnerOutlineItem.task accessed on group item")
         }
         set { kind = .task(newValue) }
+    }
+}
+
+// MARK: - NSOutlineView subclass for right-click row selection
+//
+// Default NSOutlineView doesn't highlight the row under the cursor on
+// right-click, so `clickedRow` in menuNeedsUpdate reports the row correctly
+// but the user sees no visual confirmation. Selecting the row here gives
+// feedback and lets menuNeedsUpdate rely on clickedRow/selectedRow.
+
+fileprivate final class RunnerOutlineView: NSOutlineView {
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        let row = row(at: point)
+        if row >= 0 {
+            selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        }
+        return super.menu(for: event)
     }
 }
 
