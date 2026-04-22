@@ -1197,6 +1197,7 @@ extension AppDelegate: GhosttyAppDelegate {
            session.focusedPaneID == pane.paneID {
             windowController.updateSidebarFileTree(path: pwd)
             windowController.updateSidebarGitViews(cwd: pwd)
+            windowController.rebindRunnerWorktree()
             windowController.globalStatusBar.updateFromPane(
                 cwd: pwd,
                 shellPid: pane.shellProcessID

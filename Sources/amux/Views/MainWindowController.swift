@@ -192,10 +192,14 @@ class MainWindowController: NSWindowController {
         runnerPanelView = RunnerPanelView()
         runnerPanelView.delegate = self
 
+        let containerPanel = ContainerPanelView(frame: .zero)
+        containerPanel.delegate = self
+
         rightSidebarView = RightSidebarView(
             editorSidebarView: editorSidebar,
             gitPanelView: gitPanel,
-            runnerPanelView: runnerPanelView
+            runnerPanelView: runnerPanelView,
+            containerPanelView: containerPanel
         )
         rightSidebarView.translatesAutoresizingMaskIntoConstraints = false
         rightSidebarView.delegate = self
@@ -506,14 +510,14 @@ class MainWindowController: NSWindowController {
     // MARK: - Runner worktree binding
 
     /// Resolve the currently-focused pane's working directory, normalized to
-    /// the enclosing repo root when the cwd is inside a git worktree.
-    /// Falls back to `NSHomeDirectory()` when the pane has no cwd yet, and
-    /// returns nil only when there is no active session or focused pane.
+    /// the enclosing repo root when the cwd is inside a git worktree. Uses
+    /// `queryShellCwd()` so we pick up live `cd` changes — same path the Git
+    /// panel uses. Returns nil only when there is no active session or pane.
     private func activeWorktreePath() -> String? {
         guard let session = sessionManager.activeSession,
               let focusedID = session.focusedPaneID,
               let pane = splitContainerView.pane(for: focusedID) else { return nil }
-        let cwd = pane.currentDirectory ?? NSHomeDirectory()
+        let cwd = pane.queryShellCwd()
         return GitHelper.repoRoot(from: cwd) ?? cwd
     }
 
@@ -817,6 +821,17 @@ extension MainWindowController: RunnerPanelViewDelegate {
 
         displaySession(session)
         splitContainerView.focusPane(newPaneID)
+    }
+}
+
+// MARK: - ContainerPanelViewDelegate
+
+extension MainWindowController: ContainerPanelViewDelegate {
+    func containerPanelDidRequestOpenContainer(id: String) {
+        guard let session = sessionManager.activeSession,
+              let focusedID = session.focusedPaneID,
+              let pane = splitContainerView.pane(for: focusedID) else { return }
+        pane.addContainerTab(id: id)
     }
 }
 
