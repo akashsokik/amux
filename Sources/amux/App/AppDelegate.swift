@@ -1145,6 +1145,11 @@ extension AppDelegate: SplitContainerViewDelegate {
         let cwd = pane.queryShellCwd()
         windowController.updateSidebarFileTree(path: cwd)
         windowController.updateSidebarGitViews(cwd: cwd)
+        // Click-to-focus across panes in different worktrees must also
+        // rebind the Runner tab; without this it stays on the previously
+        // focused pane's worktree. (displaySession + session-sidebar paths
+        // already call this; the intra-session focus path did not.)
+        windowController.rebindRunnerWorktree()
     }
 
     func splitContainerView(_ view: SplitContainerView, paneProcessTerminated pane: TerminalPane) {
