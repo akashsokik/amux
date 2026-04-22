@@ -212,7 +212,7 @@ final class GitPanelView: NSView {
         commitScroll.wantsLayer = true
         commitScroll.layer?.cornerRadius = Theme.CornerRadius.element
         commitScroll.layer?.borderWidth = 1
-        commitScroll.layer?.borderColor = Theme.outlineVariant.cgColor
+        commitScroll.layer?.borderColor = Theme.outline.withAlphaComponent(0.35).cgColor
         commitScroll.layer?.backgroundColor = Theme.surfaceContainerLowest.cgColor
 
         let textView = CommitTextView()
@@ -492,7 +492,7 @@ final class GitPanelView: NSView {
     @objc private func themeDidChange() {
         applyGlassOrSolid()
         separatorLine.layer?.backgroundColor = Theme.outlineVariant.cgColor
-        commitScroll.layer?.borderColor = Theme.outlineVariant.cgColor
+        commitScroll.layer?.borderColor = Theme.outline.withAlphaComponent(0.35).cgColor
         commitScroll.layer?.backgroundColor = Theme.surfaceContainerLowest.cgColor
         commitTextView.textColor = Theme.primaryText
         commitTextView.font = Theme.Fonts.body(size: 12)
@@ -1766,12 +1766,14 @@ private final class CommitRowCell: NSView {
             hashLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             hashLabel.centerYAnchor.constraint(equalTo: subjectLabel.centerYAnchor),
 
-            chipStack.leadingAnchor.constraint(equalTo: subjectLabel.leadingAnchor),
-            chipStack.topAnchor.constraint(equalTo: subjectLabel.bottomAnchor, constant: 3),
-            chipStack.trailingAnchor.constraint(lessThanOrEqualTo: metaLabel.leadingAnchor, constant: -6),
-
+            // Meta sits on its own line with a fixed offset from the subject so its
+            // position is identical whether or not there are chips on this row.
+            metaLabel.topAnchor.constraint(equalTo: subjectLabel.bottomAnchor, constant: 3),
             metaLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            metaLabel.centerYAnchor.constraint(equalTo: chipStack.centerYAnchor),
+
+            chipStack.leadingAnchor.constraint(equalTo: subjectLabel.leadingAnchor),
+            chipStack.centerYAnchor.constraint(equalTo: metaLabel.centerYAnchor),
+            chipStack.trailingAnchor.constraint(lessThanOrEqualTo: metaLabel.leadingAnchor, constant: -6),
         ])
     }
 

@@ -6,7 +6,6 @@ protocol SidebarViewDelegate: AnyObject {
     func sidebarDidRequestDeleteSession(_ session: Session)
     func sidebarDidRequestRenameSession(_ session: Session)
     func sidebarCurrentDirectory() -> String?
-    func sidebarDidRequestOpenWorktree(path: String)
     func sidebarDidSelectFile(path: String)
     func sidebarDidRequestFocusAgentPane(paneID: UUID, tabID: UUID?, sessionID: UUID)
     func sidebarDidRequestSendInterrupt(agent: AgentInstance)
@@ -17,7 +16,6 @@ enum SidebarMode {
     case sessions
     case agents
     case fileTree
-    case worktrees
 }
 
 class SidebarView: NSView {
@@ -40,10 +38,6 @@ class SidebarView: NSView {
 
     // File tree
     private var fileTreeView: FileTreeView!
-
-    // Worktree
-    private var worktreeButton: DimIconButton!
-    private var worktreeView: WorktreeView!
 
     // Agents
     private var agentsButton: DimIconButton!
@@ -82,7 +76,6 @@ class SidebarView: NSView {
         separatorLine.layer?.backgroundColor = Theme.outlineVariant.cgColor
         sessionsButton.isActiveState = mode == .sessions
         fileTreeButton.isActiveState = mode == .fileTree
-        worktreeButton.isActiveState = mode == .worktrees
         agentsButton.isActiveState = mode == .agents
         tableView.reloadData()
     }
@@ -136,7 +129,6 @@ class SidebarView: NSView {
         setupHeader()
         setupTableView()
         setupFileTree()
-        setupWorktreeView()
         setupAgentListView()
         setupSeparatorLine()
         setupConstraints()
@@ -157,9 +149,6 @@ class SidebarView: NSView {
 
         fileTreeButton = makeIconBarButton(symbolName: "folder", action: #selector(fileTreeButtonClicked))
         iconBar.addSubview(fileTreeButton)
-
-        worktreeButton = makeIconBarButton(symbolName: "arrow.triangle.branch", action: #selector(worktreeButtonClicked))
-        iconBar.addSubview(worktreeButton)
 
         agentsBadge = NSView()
         agentsBadge.translatesAutoresizingMaskIntoConstraints = false
@@ -184,11 +173,6 @@ class SidebarView: NSView {
             fileTreeButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
             fileTreeButton.widthAnchor.constraint(equalToConstant: 24),
             fileTreeButton.heightAnchor.constraint(equalToConstant: 24),
-
-            worktreeButton.leadingAnchor.constraint(equalTo: fileTreeButton.trailingAnchor, constant: 6),
-            worktreeButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
-            worktreeButton.widthAnchor.constraint(equalToConstant: 24),
-            worktreeButton.heightAnchor.constraint(equalToConstant: 24),
 
             agentsBadge.widthAnchor.constraint(equalToConstant: 8),
             agentsBadge.heightAnchor.constraint(equalToConstant: 8),
@@ -228,19 +212,6 @@ class SidebarView: NSView {
         fileTreeView.isHidden = true
         fileTreeView.delegate = self
         addSubview(fileTreeView)
-    }
-
-    private func setupWorktreeView() {
-        worktreeView = WorktreeView(frame: .zero)
-        worktreeView.translatesAutoresizingMaskIntoConstraints = false
-        worktreeView.isHidden = true
-        worktreeView.onOpenWorktree = { [weak self] path in
-            self?.delegate?.sidebarDidRequestOpenWorktree(path: path)
-        }
-        worktreeView.onCreateWorktree = { [weak self] path in
-            self?.delegate?.sidebarDidRequestOpenWorktree(path: path)
-        }
-        addSubview(worktreeView)
     }
 
     private func setupAgentListView() {
@@ -345,12 +316,6 @@ class SidebarView: NSView {
             fileTreeView.trailingAnchor.constraint(equalTo: contentTrailing),
             fileTreeView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            // Worktree view (same region, toggled via isHidden)
-            worktreeView.topAnchor.constraint(equalTo: iconBarSeparator.bottomAnchor),
-            worktreeView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            worktreeView.trailingAnchor.constraint(equalTo: contentTrailing),
-            worktreeView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
             // Agent list view (same region, toggled via isHidden)
             agentListView.topAnchor.constraint(equalTo: iconBarSeparator.bottomAnchor),
             agentListView.leadingAnchor.constraint(equalTo: leadingAnchor),
@@ -369,7 +334,6 @@ class SidebarView: NSView {
 
     @objc private func sessionsButtonClicked() { setMode(.sessions) }
     @objc private func fileTreeButtonClicked() { setMode(.fileTree) }
-    @objc private func worktreeButtonClicked() { setMode(.worktrees) }
     @objc private func agentsButtonClicked() { setMode(.agents) }
 
     @objc private func attentionCountDidChange() {
@@ -381,20 +345,15 @@ class SidebarView: NSView {
         mode = newMode
         sessionsButton.isActiveState = mode == .sessions
         fileTreeButton.isActiveState = mode == .fileTree
-        worktreeButton.isActiveState = mode == .worktrees
         agentsButton.isActiveState = mode == .agents
 
         headerLabel.isHidden = mode != .sessions
         scrollView.isHidden = mode != .sessions
         fileTreeView.isHidden = mode != .fileTree
-        worktreeView.isHidden = mode != .worktrees
         agentListView.isHidden = mode != .agents
 
-        let dir = delegate?.sidebarCurrentDirectory()
         if mode == .fileTree {
-            fileTreeView.setRootPath(dir)
-        } else if mode == .worktrees {
-            worktreeView.refresh(cwd: dir)
+            fileTreeView.setRootPath(delegate?.sidebarCurrentDirectory())
         }
     }
 
@@ -402,11 +361,6 @@ class SidebarView: NSView {
     func updateFileTreePath(_ path: String?) {
         guard mode == .fileTree else { return }
         fileTreeView.setRootPath(path)
-    }
-
-    /// Called externally when the active pane changes or its pwd updates.
-    func updateGitViews(cwd: String?) {
-        if mode == .worktrees { worktreeView.refresh(cwd: cwd) }
     }
 
     // MARK: - Public

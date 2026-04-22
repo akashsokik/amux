@@ -471,9 +471,6 @@ class MainWindowController: NSWindowController {
     }
 
     func updateSidebarGitViews(cwd: String?) {
-        if isSidebarVisible {
-            sidebarView.updateGitViews(cwd: cwd)
-        }
         if isGitPanelVisible {
             gitPanelView.refresh(cwd: cwd)
         }
@@ -612,7 +609,7 @@ extension MainWindowController: SidebarViewDelegate {
         return pane.queryShellCwd()
     }
 
-    func sidebarDidRequestOpenWorktree(path: String) {
+    private func openWorktreeAsNewSession(path: String) {
         let name = URL(fileURLWithPath: path).lastPathComponent
         let session = sessionManager.createSession(name: name)
         displaySession(session)
@@ -693,8 +690,7 @@ extension MainWindowController: SidebarViewDelegate {
 
 extension MainWindowController: GitPanelViewDelegate {
     func gitPanelDidRequestOpenWorktree(path: String) {
-        // Reuse the same flow the left sidebar uses: spawn a new session and cd into it.
-        sidebarDidRequestOpenWorktree(path: path)
+        openWorktreeAsNewSession(path: path)
     }
 }
 
