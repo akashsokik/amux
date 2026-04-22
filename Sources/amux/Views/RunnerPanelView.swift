@@ -596,8 +596,14 @@ final class RunnerPanelView: NSView {
     // MARK: - Log panel refresh
 
     private func scheduleLogRefresh() {
-        pendingLogRefresh?.cancel()
+        // Throttle (not debounce): under sustained output we must still
+        // refresh every ~16 ms. Cancelling + rescheduling on every update
+        // meant a never-pausing producer (e.g. a chatty dev server) could
+        // starve the text view indefinitely. Instead, let the first
+        // pending work item fire; subsequent updates are coalesced into it.
+        if pendingLogRefresh != nil { return }
         let work = DispatchWorkItem { [weak self] in
+            self?.pendingLogRefresh = nil
             self?.refreshLogPanel(replaceContents: false)
         }
         pendingLogRefresh = work
