@@ -147,7 +147,15 @@ final class TaskRunner {
         process.currentDirectoryURL = URL(fileURLWithPath: cwd)
 
         var env = ProcessInfo.processInfo.environment
-        env["TERM"] = "dumb"
+        // Present a color-capable terminal so tools like chalk / vite / bun
+        // emit ANSI SGR codes. The log panel renders them via ANSIRenderer.
+        // We still don't run an interactive PTY — programs that probe isatty()
+        // will see false on our pipe, but most respect FORCE_COLOR anyway.
+        env["TERM"] = "xterm-256color"
+        env["COLORTERM"] = "truecolor"
+        env["FORCE_COLOR"] = "1"
+        env["CLICOLOR_FORCE"] = "1"
+        env.removeValue(forKey: "NO_COLOR")
         process.environment = env
 
         let stdout = Pipe()
@@ -172,7 +180,8 @@ final class TaskRunner {
             let data = handle.availableData
             if data.isEmpty { return }
             if let s = String(data: data, encoding: .utf8) {
-                buffer.append(ANSIStripper.strip(s))
+                // Keep raw ANSI; ANSIRenderer parses it when rendering.
+                buffer.append(s)
                 NotificationCenter.default.post(
                     name: TaskRunner.didUpdateNotification, object: nil,
                     userInfo: [
@@ -187,7 +196,8 @@ final class TaskRunner {
             let data = handle.availableData
             if data.isEmpty { return }
             if let s = String(data: data, encoding: .utf8) {
-                buffer.append(ANSIStripper.strip(s))
+                // Keep raw ANSI; ANSIRenderer parses it when rendering.
+                buffer.append(s)
                 NotificationCenter.default.post(
                     name: TaskRunner.didUpdateNotification, object: nil,
                     userInfo: [

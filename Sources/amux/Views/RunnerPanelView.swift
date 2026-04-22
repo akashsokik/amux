@@ -92,6 +92,10 @@ final class RunnerPanelView: NSView {
     // Coalesce log refreshes so rapid output bursts don't starve the main thread.
     private var pendingLogRefresh: DispatchWorkItem?
 
+    /// Last rendered raw snapshot. ANSI rendering is expensive on large
+    /// buffers, so we skip re-rendering when the buffer hasn't changed.
+    private var lastRenderedRawSnapshot: String?
+
     // Outline data — wrappers use reference-equality so NSOutlineView's
     // identity-keyed APIs (reloadItem, expandItem) work correctly across
     // repeated reloads. Fresh wrappers per reload would defeat reloadItem.
@@ -717,6 +721,11 @@ final class RunnerPanelView: NSView {
 
         // Text view contents — route through the effective run so tab
         // selection (pinned historical run) overrides "latest".
+        if replaceContents {
+            // Force next render even if the raw text happens to match
+            // (different run, same content edge case).
+            lastRenderedRawSnapshot = nil
+        }
         guard let session = effectiveSession() else {
             if replaceContents {
                 setLogText("")
@@ -739,26 +748,31 @@ final class RunnerPanelView: NSView {
         return runner.session(for: id, worktreePath: worktreePath)
     }
 
-    /// Replace the text view's contents, preserving scroll position when the
-    /// user has scrolled away from the bottom.
+    /// Replace the text view's contents with ANSI-rendered output, preserving
+    /// scroll position when the user has scrolled away from the bottom.
     private func setLogText(_ text: String) {
         guard let textView = logTextView, let scroll = logScrollView else { return }
 
-        // Determine "at bottom" BEFORE mutating contents. Use a small slack
-        // window because scrollers are overlays and content insets can nudge
-        // the math by a pixel or two.
+        if lastRenderedRawSnapshot == text {
+            return
+        }
+        lastRenderedRawSnapshot = text
+
         let atBottom: Bool = {
             let visibleMaxY = scroll.contentView.bounds.maxY
             let documentHeight = textView.frame.height
             return visibleMaxY >= documentHeight - 2
         }()
 
-        if textView.string != text {
-            textView.string = text
-        }
+        let font = textView.font ?? NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
+        let rendered = ANSIRenderer.render(
+            text,
+            defaultColor: Theme.primaryText,
+            font: font
+        )
+        textView.textStorage?.setAttributedString(rendered)
 
         if atBottom {
-            // Defer to next runloop tick so layout settles before scrolling.
             DispatchQueue.main.async { [weak textView] in
                 textView?.scrollToEndOfDocument(nil)
             }
@@ -1060,6 +1074,8 @@ final class RunnerPanelView: NSView {
             if let item = groupItems[src] { outlineView.expandItem(item) }
         }
         rebuildRunTabs()
+        lastRenderedRawSnapshot = nil
+        refreshLogPanel(replaceContents: true)
     }
 }
 
@@ -1247,15 +1263,26 @@ private final class RunnerGroupCell: NSView {
 // MARK: - Task row cell
 
 private final class RunnerTaskCell: NSView {
+    private let hoverBg = NSView()
     private let toggleButton = DimIconButton()
     private let nameLabel = NSTextField(labelWithString: "")
     private let customBadge = NSTextField(labelWithString: "custom")
     private let statusDot = NSView()
 
     private var onToggle: (() -> Void)?
+    private var isHovered = false {
+        didSet { updateHoverBg() }
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
+        wantsLayer = true
+
+        hoverBg.translatesAutoresizingMaskIntoConstraints = false
+        hoverBg.wantsLayer = true
+        hoverBg.layer?.cornerRadius = Theme.CornerRadius.element
+        hoverBg.layer?.backgroundColor = NSColor.clear.cgColor
+        addSubview(hoverBg)
 
         toggleButton.translatesAutoresizingMaskIntoConstraints = false
         toggleButton.imagePosition = .imageOnly
@@ -1300,6 +1327,11 @@ private final class RunnerTaskCell: NSView {
         addSubview(statusDot)
 
         NSLayoutConstraint.activate([
+            hoverBg.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 3),
+            hoverBg.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -3),
+            hoverBg.topAnchor.constraint(equalTo: topAnchor, constant: 1),
+            hoverBg.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
+
             toggleButton.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 2),
             toggleButton.centerYAnchor.constraint(equalTo: centerYAnchor),
             toggleButton.widthAnchor.constraint(equalToConstant: 18),
@@ -1322,6 +1354,36 @@ private final class RunnerTaskCell: NSView {
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach { removeTrackingArea($0) }
+        let area = NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+    }
+
+    override func mouseEntered(with event: NSEvent) { isHovered = true }
+
+    override func mouseExited(with event: NSEvent) {
+        guard let window = window else { isHovered = false; return }
+        let loc = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        if !bounds.contains(loc) {
+            isHovered = false
+        }
+    }
+
+    private func updateHoverBg() {
+        CALayer.performWithoutAnimation {
+            hoverBg.layer?.backgroundColor = isHovered
+                ? Theme.hoverBg.cgColor
+                : NSColor.clear.cgColor
+        }
+    }
 
     func configure(task: RunnerTask, status: TaskStatus?, onToggle: @escaping () -> Void) {
         self.onToggle = onToggle
