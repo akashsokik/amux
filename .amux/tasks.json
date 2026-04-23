@@ -1,0 +1,10 @@
+{
+  "tasks" : [
+    {
+      "command" : "bash run.sh",
+      "id" : "run-sh",
+      "name" : "run.sh"
+    }
+  ],
+  "version" : 1
+}

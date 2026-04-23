@@ -7,10 +7,24 @@ protocol SplitContainerViewDelegate: AnyObject {
 }
 
 class SplitContainerView: NSView {
-    private var splitTree: SplitTree?
-    private var glassView: GlassBackgroundView?
-    weak var containerDelegate: SplitContainerViewDelegate?
-    weak var agentManager: AgentManager?
+    var splitTree: SplitTree?
+    var glassView: GlassBackgroundView?
+    var containerDelegate: SplitContainerViewDelegate?
+    var agentManager: AgentManager?
+
+    /// When set, all panes (existing and newly created) will cd into this path on new tabs.
+    var projectRootPath: String? {
+        didSet {
+            for (_, pane) in paneViews {
+                pane.projectRootPath = projectRootPath
+            }
+            for (_, cache) in sessionPaneCache {
+                for (_, pane) in cache {
+                    pane.projectRootPath = projectRootPath
+                }
+            }
+        }
+    }
 
     /// Map pane IDs to TerminalPane views for the CURRENT session.
     private(set) var paneViews: [UUID: TerminalPane] = [:]
@@ -84,13 +98,17 @@ class SplitContainerView: NSView {
 
     func setSplitTree(_ tree: SplitTree, forSessionID sessionID: UUID) {
         let isSameSession = (currentSessionID == sessionID)
-        print("[SplitContainer] setSplitTree session=\(sessionID) same=\(isSameSession) currentPanes=\(paneViews.keys.map { $0.uuidString.prefix(4) }) treeIDs=\(tree.allPaneIDs().map { $0.uuidString.prefix(4) })")
+        print(
+            "[SplitContainer] setSplitTree session=\(sessionID) same=\(isSameSession) currentPanes=\(paneViews.keys.map { $0.uuidString.prefix(4) }) treeIDs=\(tree.allPaneIDs().map { $0.uuidString.prefix(4) })"
+        )
 
         // If switching to a different session, cache current panes and restore cached panes
         if let currentID = currentSessionID, currentID != sessionID {
             // Save current pane views to cache (keeps them alive)
             sessionPaneCache[currentID] = paneViews
-            print("[SplitContainer] Cached \(paneViews.count) panes for session \(String(currentID.uuidString.prefix(4)))")
+            print(
+                "[SplitContainer] Cached \(paneViews.count) panes for session \(String(currentID.uuidString.prefix(4)))"
+            )
 
             // Detach current panes from view hierarchy (don't destroy)
             for (_, paneView) in paneViews {
@@ -105,7 +123,9 @@ class SplitContainerView: NSView {
 
             // Load cached panes for the new session
             paneViews = sessionPaneCache[sessionID] ?? [:]
-            print("[SplitContainer] Restored \(paneViews.count) cached panes for session \(String(sessionID.uuidString.prefix(4)))")
+            print(
+                "[SplitContainer] Restored \(paneViews.count) cached panes for session \(String(sessionID.uuidString.prefix(4)))"
+            )
 
             // Re-add cached panes as subviews
             for (_, paneView) in paneViews {
@@ -237,18 +257,28 @@ class SplitContainerView: NSView {
                 let firstWidth = floor(availableWidth * ratio)
                 let secondWidth = availableWidth - firstWidth
 
-                firstRect = CGRect(x: rect.minX, y: rect.minY, width: firstWidth, height: rect.height)
-                dividerRect = CGRect(x: rect.minX + firstWidth, y: rect.minY, width: dividerThickness, height: rect.height)
-                secondRect = CGRect(x: rect.minX + firstWidth + dividerThickness, y: rect.minY, width: secondWidth, height: rect.height)
+                firstRect = CGRect(
+                    x: rect.minX, y: rect.minY, width: firstWidth, height: rect.height)
+                dividerRect = CGRect(
+                    x: rect.minX + firstWidth, y: rect.minY, width: dividerThickness,
+                    height: rect.height)
+                secondRect = CGRect(
+                    x: rect.minX + firstWidth + dividerThickness, y: rect.minY, width: secondWidth,
+                    height: rect.height)
 
             case .horizontal:
                 let availableHeight = rect.height - dividerThickness
                 let firstHeight = floor(availableHeight * ratio)
                 let secondHeight = availableHeight - firstHeight
 
-                firstRect = CGRect(x: rect.minX, y: rect.minY + secondHeight + dividerThickness, width: rect.width, height: firstHeight)
-                dividerRect = CGRect(x: rect.minX, y: rect.minY + secondHeight, width: rect.width, height: dividerThickness)
-                secondRect = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: secondHeight)
+                firstRect = CGRect(
+                    x: rect.minX, y: rect.minY + secondHeight + dividerThickness, width: rect.width,
+                    height: firstHeight)
+                dividerRect = CGRect(
+                    x: rect.minX, y: rect.minY + secondHeight, width: rect.width,
+                    height: dividerThickness)
+                secondRect = CGRect(
+                    x: rect.minX, y: rect.minY, width: rect.width, height: secondHeight)
             }
 
             if let dividerView = dividerViews[container.id] {
@@ -300,6 +330,7 @@ class SplitContainerView: NSView {
         let pane = TerminalPane(paneID: id, initialInput: initialInput)
         pane.isFocused = (id == focusedPaneID)
         pane.delegate = self
+        pane.projectRootPath = projectRootPath
         paneViews[id] = pane
         containerDelegate?.splitContainerView(self, didCreatePane: pane)
         return pane
@@ -337,7 +368,8 @@ class SplitContainerView: NSView {
 
     func swapPanes(source: UUID, target: UUID) {
         guard let sourceView = paneViews[source],
-              let targetView = paneViews[target] else { return }
+            let targetView = paneViews[target]
+        else { return }
 
         let sourceFrame = sourceView.frame
         sourceView.frame = targetView.frame
@@ -366,7 +398,8 @@ class SplitContainerView: NSView {
     /// Iterate all active panes and feed their shell PIDs to the agent manager.
     func updateAgentManagerMappings() {
         guard let agentManager = agentManager,
-              let sessionID = currentSessionID else { return }
+            let sessionID = currentSessionID
+        else { return }
         var entries: [AgentManager.ShellEntry] = []
 
         for (paneID, pane) in paneViews {
@@ -375,11 +408,13 @@ class SplitContainerView: NSView {
             if tabPIDs.isEmpty {
                 // Fallback: use the pane's single shellProcessID
                 if let pid = pane.shellProcessID {
-                    entries.append(.init(paneID: paneID, tabID: nil, sessionID: sessionID, shellPid: pid))
+                    entries.append(
+                        .init(paneID: paneID, tabID: nil, sessionID: sessionID, shellPid: pid))
                 }
             } else {
                 for (tabID, pid) in tabPIDs {
-                    entries.append(.init(paneID: paneID, tabID: tabID, sessionID: sessionID, shellPid: pid))
+                    entries.append(
+                        .init(paneID: paneID, tabID: tabID, sessionID: sessionID, shellPid: pid))
                 }
             }
         }
@@ -390,11 +425,17 @@ class SplitContainerView: NSView {
                 let tabPIDs = pane.allShellPIDs
                 if tabPIDs.isEmpty {
                     if let pid = pane.shellProcessID {
-                        entries.append(.init(paneID: paneID, tabID: nil, sessionID: cachedSessionID, shellPid: pid))
+                        entries.append(
+                            .init(
+                                paneID: paneID, tabID: nil, sessionID: cachedSessionID,
+                                shellPid: pid))
                     }
                 } else {
                     for (tabID, pid) in tabPIDs {
-                        entries.append(.init(paneID: paneID, tabID: tabID, sessionID: cachedSessionID, shellPid: pid))
+                        entries.append(
+                            .init(
+                                paneID: paneID, tabID: tabID, sessionID: cachedSessionID,
+                                shellPid: pid))
                     }
                 }
             }
@@ -409,7 +450,8 @@ class SplitContainerView: NSView {
         return dimensionForNode(root, splitNodeID: splitNodeID, in: bounds)
     }
 
-    private func dimensionForNode(_ node: SplitNode, splitNodeID: UUID, in rect: CGRect) -> CGFloat {
+    private func dimensionForNode(_ node: SplitNode, splitNodeID: UUID, in rect: CGRect) -> CGFloat
+    {
         switch node {
         case .leaf:
             return 0
@@ -431,14 +473,20 @@ class SplitContainerView: NSView {
                 let availableWidth = rect.width - dividerThickness
                 let firstWidth = floor(availableWidth * ratio)
                 let secondWidth = availableWidth - firstWidth
-                firstRect = CGRect(x: rect.minX, y: rect.minY, width: firstWidth, height: rect.height)
-                secondRect = CGRect(x: rect.minX + firstWidth + dividerThickness, y: rect.minY, width: secondWidth, height: rect.height)
+                firstRect = CGRect(
+                    x: rect.minX, y: rect.minY, width: firstWidth, height: rect.height)
+                secondRect = CGRect(
+                    x: rect.minX + firstWidth + dividerThickness, y: rect.minY, width: secondWidth,
+                    height: rect.height)
             case .horizontal:
                 let availableHeight = rect.height - dividerThickness
                 let firstHeight = floor(availableHeight * ratio)
                 let secondHeight = availableHeight - firstHeight
-                firstRect = CGRect(x: rect.minX, y: rect.minY, width: rect.width, height: firstHeight)
-                secondRect = CGRect(x: rect.minX, y: rect.minY + firstHeight + dividerThickness, width: rect.width, height: secondHeight)
+                firstRect = CGRect(
+                    x: rect.minX, y: rect.minY, width: rect.width, height: firstHeight)
+                secondRect = CGRect(
+                    x: rect.minX, y: rect.minY + firstHeight + dividerThickness, width: rect.width,
+                    height: secondHeight)
             }
 
             let r1 = dimensionForNode(container.first, splitNodeID: splitNodeID, in: firstRect)
@@ -514,7 +562,8 @@ extension SplitContainerView: TerminalPaneDelegate {
 
     // MARK: - Tab Drag & Drop
 
-    func terminalPane(_ pane: TerminalPane, didReceiveTabDrop info: TabDragInfo, atIndex index: Int) {
+    func terminalPane(_ pane: TerminalPane, didReceiveTabDrop info: TabDragInfo, atIndex index: Int)
+    {
         // Exit zoom if active
         if splitTree?.zoomedPaneID != nil {
             splitTree?.zoomedPaneID = nil
@@ -529,7 +578,8 @@ extension SplitContainerView: TerminalPaneDelegate {
 
         // Cross-pane transfer
         guard let sourcePane = paneViews[info.sourcePaneID],
-              let (tab, tv) = sourcePane.extractTab(info.tabID) else { return }
+            let (tab, tv) = sourcePane.extractTab(info.tabID)
+        else { return }
         pane.insertTab(tab, terminalView: tv, at: index)
     }
 
@@ -540,7 +590,8 @@ extension SplitContainerView: TerminalPaneDelegate {
         }
 
         guard let sourcePane = paneViews[info.sourcePaneID],
-              let (tab, tv) = sourcePane.extractTab(info.tabID) else { return }
+            let (tab, tv) = sourcePane.extractTab(info.tabID)
+        else { return }
 
         let direction: SplitDirection
         let position: SplitPosition
@@ -559,11 +610,13 @@ extension SplitContainerView: TerminalPaneDelegate {
             position = .second
         }
 
-        guard let (_, newPaneID) = splitTree?.insert(
-            splitting: pane.paneID,
-            direction: direction,
-            position: position
-        ) else { return }
+        guard
+            let (_, newPaneID) = splitTree?.insert(
+                splitting: pane.paneID,
+                direction: direction,
+                position: position
+            )
+        else { return }
 
         // Create a new empty pane and insert the dragged tab into it
         let newPane = TerminalPane(paneID: newPaneID, skipInitialTab: true)
@@ -605,8 +658,9 @@ extension SplitContainerView: TerminalPaneDelegate {
         }
         // Reject if source pane has only 1 tab and only 1 pane in tree
         if let sourcePane = paneViews[info.sourcePaneID],
-           sourcePane.tabCount <= 1,
-           (splitTree?.allPaneIDs().count ?? 0) <= 1 {
+            sourcePane.tabCount <= 1,
+            (splitTree?.allPaneIDs().count ?? 0) <= 1
+        {
             return false
         }
         return true

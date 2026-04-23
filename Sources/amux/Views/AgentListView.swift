@@ -10,9 +10,9 @@ protocol AgentListViewDelegate: AnyObject {
 
 // MARK: - Data Model
 
-struct SessionGroup {
+struct ProjectGroup {
     let sessionID: UUID
-    let sessionName: String
+    let projectName: String
     var typeGroups: [TypeGroup]
 }
 
@@ -27,10 +27,11 @@ class AgentListView: NSView {
     weak var delegate: AgentListViewDelegate?
     private let agentManager: AgentManager
     private let sessionManager: SessionManager
+    private let projectManager: ProjectManager
     private var outlineView: NSOutlineView!
     private var scrollView: NSScrollView!
     private var emptyLabel: NSTextField!
-    private var sessionGroups: [SessionGroup] = []
+    private var projectGroups: [ProjectGroup] = []
     // Cached wrappers for stable NSOutlineView identity (prevents collapse on reload)
     private var cachedSessionWrappers: [SessionGroupWrapper] = []
 
@@ -38,9 +39,11 @@ class AgentListView: NSView {
     private static let typeGroupCellID = NSUserInterfaceItemIdentifier("TypeGroupCell")
     private static let agentCellID = NSUserInterfaceItemIdentifier("AgentCell")
 
-    init(agentManager: AgentManager, sessionManager: SessionManager) {
+    init(agentManager: AgentManager, sessionManager: SessionManager, projectManager: ProjectManager)
+    {
         self.agentManager = agentManager
         self.sessionManager = sessionManager
+        self.projectManager = projectManager
         super.init(frame: .zero)
         setupUI()
 
@@ -143,11 +146,20 @@ class AgentListView: NSView {
     // MARK: - Data
 
     private func rebuildData() {
-        var groups: [UUID: SessionGroup] = [:]
+        var groups: [UUID: ProjectGroup] = [:]
         for agent in agentManager.allAgents {
             if groups[agent.sessionID] == nil {
-                let name = sessionManager.sessions.first(where: { $0.id == agent.sessionID })?.name ?? "Unknown"
-                groups[agent.sessionID] = SessionGroup(sessionID: agent.sessionID, sessionName: name, typeGroups: [])
+                let session = sessionManager.sessions.first(where: { $0.id == agent.sessionID })
+                let projectName: String
+                if let projectID = session?.projectID,
+                    let project = projectManager.projects.first(where: { $0.id == projectID })
+                {
+                    projectName = project.displayName
+                } else {
+                    projectName = session?.name ?? "Unknown"
+                }
+                groups[agent.sessionID] = ProjectGroup(
+                    sessionID: agent.sessionID, projectName: projectName, typeGroups: [])
             }
             var group = groups[agent.sessionID]!
             if let idx = group.typeGroups.firstIndex(where: { $0.type == agent.agentType }) {
@@ -157,7 +169,7 @@ class AgentListView: NSView {
             }
             groups[agent.sessionID] = group
         }
-        sessionGroups = Array(groups.values).sorted { $0.sessionName < $1.sessionName }
+        projectGroups = Array(groups.values).sorted { $0.projectName < $1.projectName }
 
         // Build stable wrappers -- reuse existing ones by session ID to preserve
         // NSOutlineView expand/collapse state (it uses object identity)
@@ -165,7 +177,7 @@ class AgentListView: NSView {
             uniqueKeysWithValues: cachedSessionWrappers.map { ($0.group.sessionID, $0) }
         )
         var newWrappers: [SessionGroupWrapper] = []
-        for group in sessionGroups {
+        for group in projectGroups {
             let sessionWrapper: SessionGroupWrapper
             if let existing = oldWrappersBySession[group.sessionID] {
                 existing.group = group
@@ -175,7 +187,9 @@ class AgentListView: NSView {
             }
             // Rebuild type group wrappers, reusing by type
             let oldTypeByType = Dictionary(
-                uniqueKeysWithValues: sessionWrapper.typeGroupWrappers.map { ($0.typeGroup.type, $0) }
+                uniqueKeysWithValues: sessionWrapper.typeGroupWrappers.map {
+                    ($0.typeGroup.type, $0)
+                }
             )
             var newTypeWrappers: [TypeGroupWrapper] = []
             for tg in group.typeGroups {
@@ -205,8 +219,8 @@ class AgentListView: NSView {
                 outlineView.expandItem(wrapper, expandChildren: true)
             }
         }
-        emptyLabel.isHidden = !sessionGroups.isEmpty
-        scrollView.isHidden = sessionGroups.isEmpty
+        emptyLabel.isHidden = !projectGroups.isEmpty
+        scrollView.isHidden = projectGroups.isEmpty
     }
 
     // MARK: - Actions
@@ -234,7 +248,8 @@ class AgentListView: NSView {
 
     @objc private func focusPaneClicked(_ sender: NSMenuItem) {
         guard let agent = sender.representedObject as? AgentInstance else { return }
-        delegate?.agentListDidRequestFocusPane(paneID: agent.paneID, tabID: agent.tabID, sessionID: agent.sessionID)
+        delegate?.agentListDidRequestFocusPane(
+            paneID: agent.paneID, tabID: agent.tabID, sessionID: agent.sessionID)
     }
 
     @objc private func sendInterruptClicked(_ sender: NSMenuItem) {
@@ -252,10 +267,10 @@ class AgentListView: NSView {
 
 // NSOutlineView needs reference-type items for identity tracking.
 private class SessionGroupWrapper {
-    var group: SessionGroup
+    var group: ProjectGroup
     var typeGroupWrappers: [TypeGroupWrapper]
 
-    init(group: SessionGroup, typeGroupWrappers: [TypeGroupWrapper]) {
+    init(group: ProjectGroup, typeGroupWrappers: [TypeGroupWrapper]) {
         self.group = group
         self.typeGroupWrappers = typeGroupWrappers
     }
@@ -286,7 +301,7 @@ private class AgentWrapper {
 extension AgentListView: NSOutlineViewDataSource {
     func outlineView(_ outlineView: NSOutlineView, numberOfChildrenOfItem item: Any?) -> Int {
         if item == nil {
-            return sessionGroups.count
+            return projectGroups.count
         }
         if let wrapper = item as? SessionGroupWrapper {
             return wrapper.typeGroupWrappers.count
@@ -318,22 +333,26 @@ extension AgentListView: NSOutlineViewDataSource {
 // MARK: - NSOutlineViewDelegate
 
 extension AgentListView: NSOutlineViewDelegate {
-    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any) -> NSView? {
+    func outlineView(_ outlineView: NSOutlineView, viewFor tableColumn: NSTableColumn?, item: Any)
+        -> NSView?
+    {
         if let wrapper = item as? SessionGroupWrapper {
-            var cell = outlineView.makeView(
-                withIdentifier: Self.sessionGroupCellID, owner: self
-            ) as? SessionGroupHeaderCell
+            var cell =
+                outlineView.makeView(
+                    withIdentifier: Self.sessionGroupCellID, owner: self
+                ) as? SessionGroupHeaderCell
             if cell == nil {
                 cell = SessionGroupHeaderCell()
                 cell?.identifier = Self.sessionGroupCellID
             }
-            cell?.configure(name: wrapper.group.sessionName)
+            cell?.configure(name: wrapper.group.projectName)
             return cell
         }
         if let wrapper = item as? TypeGroupWrapper {
-            var cell = outlineView.makeView(
-                withIdentifier: Self.typeGroupCellID, owner: self
-            ) as? TypeGroupHeaderCell
+            var cell =
+                outlineView.makeView(
+                    withIdentifier: Self.typeGroupCellID, owner: self
+                ) as? TypeGroupHeaderCell
             if cell == nil {
                 cell = TypeGroupHeaderCell()
                 cell?.identifier = Self.typeGroupCellID
@@ -342,9 +361,10 @@ extension AgentListView: NSOutlineViewDelegate {
             return cell
         }
         if let wrapper = item as? AgentWrapper {
-            var cell = outlineView.makeView(
-                withIdentifier: Self.agentCellID, owner: self
-            ) as? AgentCellView
+            var cell =
+                outlineView.makeView(
+                    withIdentifier: Self.agentCellID, owner: self
+                ) as? AgentCellView
             if cell == nil {
                 cell = AgentCellView()
                 cell?.identifier = Self.agentCellID
@@ -578,7 +598,8 @@ private class AgentCellView: NSView {
 
             nameLabel.leadingAnchor.constraint(equalTo: stateIndicator.trailingAnchor, constant: 8),
             nameLabel.centerYAnchor.constraint(equalTo: stateIndicator.centerYAnchor),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: durationLabel.leadingAnchor, constant: -8),
+            nameLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: durationLabel.leadingAnchor, constant: -8),
 
             durationLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
             durationLabel.centerYAnchor.constraint(equalTo: nameLabel.centerYAnchor),
@@ -586,7 +607,8 @@ private class AgentCellView: NSView {
 
             subtitleLabel.leadingAnchor.constraint(equalTo: nameLabel.leadingAnchor),
             subtitleLabel.topAnchor.constraint(equalTo: nameLabel.bottomAnchor, constant: 2),
-            subtitleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -16),
+            subtitleLabel.trailingAnchor.constraint(
+                lessThanOrEqualTo: trailingAnchor, constant: -16),
         ])
 
         nameLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)

@@ -1,10 +1,10 @@
 import AppKit
 import CGhostty
 
-private extension NSToolbarItem.Identifier {
-    static let sidebarToggle = NSToolbarItem.Identifier("sidebarToggle")
-    static let flexSpace = NSToolbarItem.Identifier.flexibleSpace
-    static let actions = NSToolbarItem.Identifier("actions")
+extension NSToolbarItem.Identifier {
+    fileprivate static let sidebarToggle = NSToolbarItem.Identifier("sidebarToggle")
+    fileprivate static let flexSpace = NSToolbarItem.Identifier.flexibleSpace
+    fileprivate static let actions = NSToolbarItem.Identifier("actions")
 }
 
 private typealias ToolbarIconButton = DimIconButton
@@ -40,6 +40,7 @@ class MainWindowController: NSWindowController {
 
     private let sessionManager: SessionManager
     private(set) var agentManager: AgentManager
+    private(set) var projectManager: ProjectManager
     private var toolbarButtons: [ToolbarIconButton] = []
     private var toolbarEditorDropdown: EditorDropdownButton?
     private var statusPollTimer: Timer?
@@ -49,15 +50,22 @@ class MainWindowController: NSWindowController {
     private let minSidebarWidth: CGFloat = 150
     private let maxSidebarWidth: CGFloat = 400
 
-    init(sessionManager: SessionManager, agentManager: AgentManager) {
+    init(sessionManager: SessionManager, agentManager: AgentManager, projectManager: ProjectManager)
+    {
         self.sessionManager = sessionManager
         self.agentManager = agentManager
+        self.projectManager = projectManager
 
         let window = MainWindowController.createWindow()
         super.init(window: window)
 
         setupToolbar()
         setupViews()
+
+        // Restore project root scope so new tabs open in the right directory
+        if let activeProject = projectManager.activeProject {
+            splitContainerView.projectRootPath = activeProject.rootPath
+        }
 
         if let activeSession = sessionManager.activeSession {
             displaySession(activeSession)
@@ -68,7 +76,8 @@ class MainWindowController: NSWindowController {
             name: Theme.didChangeNotification, object: nil
         )
 
-        statusPollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) { [weak self] _ in
+        statusPollTimer = Timer.scheduledTimer(withTimeInterval: 3.0, repeats: true) {
+            [weak self] _ in
             self?.pollSessionStatuses()
         }
     }
@@ -79,7 +88,8 @@ class MainWindowController: NSWindowController {
     }
 
     @objc private func themeDidChange() {
-        window?.appearance = NSAppearance(named: ThemeManager.shared.current.isLight ? .aqua : .darkAqua)
+        window?.appearance = NSAppearance(
+            named: ThemeManager.shared.current.isLight ? .aqua : .darkAqua)
         if Theme.useVibrancy {
             window?.backgroundColor = .clear
             window?.contentView?.layer?.backgroundColor = NSColor.clear.cgColor
@@ -127,7 +137,8 @@ class MainWindowController: NSWindowController {
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
         window.toolbarStyle = .unifiedCompact
-        window.appearance = NSAppearance(named: ThemeManager.shared.current.isLight ? .aqua : .darkAqua)
+        window.appearance = NSAppearance(
+            named: ThemeManager.shared.current.isLight ? .aqua : .darkAqua)
         window.isReleasedWhenClosed = false
         window.backgroundColor = Theme.background
 
@@ -164,7 +175,9 @@ class MainWindowController: NSWindowController {
         splitContainerView.translatesAutoresizingMaskIntoConstraints = false
         contentView.addSubview(splitContainerView)
 
-        sidebarView = SidebarView(sessionManager: sessionManager, agentManager: agentManager)
+        sidebarView = SidebarView(
+            sessionManager: sessionManager, agentManager: agentManager,
+            projectManager: projectManager)
         sidebarView.translatesAutoresizingMaskIntoConstraints = false
         sidebarView.delegate = self
         contentView.addSubview(sidebarView)
@@ -236,7 +249,8 @@ class MainWindowController: NSWindowController {
         rightSidebarTrailingConstraint = rightSidebarView.trailingAnchor.constraint(
             equalTo: contentView.trailingAnchor, constant: rightSidebarWidth
         )
-        rightSidebarWidthConstraint = rightSidebarView.widthAnchor.constraint(equalToConstant: rightSidebarWidth)
+        rightSidebarWidthConstraint = rightSidebarView.widthAnchor.constraint(
+            equalToConstant: rightSidebarWidth)
         rightSidebarWidthConstraint.priority = .defaultHigh
 
         NSLayoutConstraint.activate([
@@ -247,7 +261,8 @@ class MainWindowController: NSWindowController {
             sidebarView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
             // Left resize handle
-            resizeHandle.leadingAnchor.constraint(equalTo: sidebarView.trailingAnchor, constant: -2),
+            resizeHandle.leadingAnchor.constraint(
+                equalTo: sidebarView.trailingAnchor, constant: -2),
             resizeHandle.topAnchor.constraint(equalTo: contentView.topAnchor),
             resizeHandle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             resizeHandle.widthAnchor.constraint(equalToConstant: 5),
@@ -259,7 +274,8 @@ class MainWindowController: NSWindowController {
             rightSidebarView.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
 
             // Right resize handle
-            rightSidebarResizeHandle.trailingAnchor.constraint(equalTo: rightSidebarView.leadingAnchor, constant: 2),
+            rightSidebarResizeHandle.trailingAnchor.constraint(
+                equalTo: rightSidebarView.leadingAnchor, constant: 2),
             rightSidebarResizeHandle.topAnchor.constraint(equalTo: contentView.topAnchor),
             rightSidebarResizeHandle.bottomAnchor.constraint(equalTo: contentView.bottomAnchor),
             rightSidebarResizeHandle.widthAnchor.constraint(equalToConstant: 5),
@@ -326,7 +342,8 @@ class MainWindowController: NSWindowController {
                 let leftEdge: CGFloat = isSidebarVisible ? sidebarWidth : 0
                 let minTerminalWidth: CGFloat = 200
                 let available = contentView.bounds.width - leftEdge - minTerminalWidth
-                let clamped = rightSidebarWidth.clamped(to: minRightSidebarWidth...max(minRightSidebarWidth, available))
+                let clamped = rightSidebarWidth.clamped(
+                    to: minRightSidebarWidth...max(minRightSidebarWidth, available))
                 rightSidebarWidthConstraint.constant = clamped
                 rightSidebarWidth = clamped
             }
@@ -340,17 +357,19 @@ class MainWindowController: NSWindowController {
 
         GhosttyTerminalView.deferSurfaceResize = true
         if Theme.useVibrancy { rightSidebarView.setGlassHidden(true) }
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = Theme.Animation.standard
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        NSAnimationContext.runAnimationGroup(
+            { context in
+                context.duration = Theme.Animation.standard
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
 
-            rightSidebarTrailingConstraint.animator().constant = targetTrailing
-            window?.contentView?.layoutSubtreeIfNeeded()
-        }, completionHandler: {
-            GhosttyTerminalView.deferSurfaceResize = false
-            self.splitContainerView.needsLayout = true
-            if Theme.useVibrancy { self.rightSidebarView.setGlassHidden(false) }
-        })
+                rightSidebarTrailingConstraint.animator().constant = targetTrailing
+                window?.contentView?.layoutSubtreeIfNeeded()
+            },
+            completionHandler: {
+                GhosttyTerminalView.deferSurfaceResize = false
+                self.splitContainerView.needsLayout = true
+                if Theme.useVibrancy { self.rightSidebarView.setGlassHidden(false) }
+            })
     }
 
     // Back-compat shims so menu/palette actions keep working.
@@ -366,20 +385,22 @@ class MainWindowController: NSWindowController {
 
         GhosttyTerminalView.deferSurfaceResize = true
         if Theme.useVibrancy { sidebarView.setGlassHidden(true) }
-        NSAnimationContext.runAnimationGroup({ context in
-            context.duration = Theme.Animation.standard
-            context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        NSAnimationContext.runAnimationGroup(
+            { context in
+                context.duration = Theme.Animation.standard
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
 
-            sidebarLeadingConstraint.animator().constant = targetLeading
-            window?.contentView?.layoutSubtreeIfNeeded()
-        }, completionHandler: {
-            GhosttyTerminalView.deferSurfaceResize = false
-            self.splitContainerView.needsLayout = true
-            if Theme.useVibrancy { self.sidebarView.setGlassHidden(false) }
-            if self.isSidebarVisible {
-                self.sidebarView.reloadSessions()
-            }
-        })
+                sidebarLeadingConstraint.animator().constant = targetLeading
+                window?.contentView?.layoutSubtreeIfNeeded()
+            },
+            completionHandler: {
+                GhosttyTerminalView.deferSurfaceResize = false
+                self.splitContainerView.needsLayout = true
+                if Theme.useVibrancy { self.sidebarView.setGlassHidden(false) }
+                if self.isSidebarVisible {
+                    self.sidebarView.reloadSessions()
+                }
+            })
     }
 
     // MARK: - Toolbar actions
@@ -397,23 +418,21 @@ class MainWindowController: NSWindowController {
     }
 
     @objc private func toolbarNewSession(_ sender: Any?) {
-        let session = sessionManager.createSession()
+        let session = sessionManager.createSession(projectID: projectManager.activeProject?.id)
         displaySession(session)
-        if isSidebarVisible {
-            sidebarView.reloadSessions()
-        }
+        if isSidebarVisible { sidebarView.reloadSessions() }
     }
 
     @objc private func toolbarSplitVertical(_ sender: Any?) {
         guard let session = sessionManager.activeSession else { return }
-        if let _ = session.splitFocusedPane(direction: .vertical) {
+        if session.splitFocusedPane(direction: .vertical) != nil {
             displaySession(session)
         }
     }
 
     @objc private func toolbarSplitHorizontal(_ sender: Any?) {
         guard let session = sessionManager.activeSession else { return }
-        if let _ = session.splitFocusedPane(direction: .horizontal) {
+        if session.splitFocusedPane(direction: .horizontal) != nil {
             displaySession(session)
         }
     }
@@ -426,8 +445,9 @@ class MainWindowController: NSWindowController {
 
         // Update global status bar from focused pane using Ghostty-provided CWD
         if let activeSession = sessionManager.activeSession,
-           let focusedID = activeSession.focusedPaneID,
-           let pane = splitContainerView.pane(for: focusedID) {
+            let focusedID = activeSession.focusedPaneID,
+            let pane = splitContainerView.pane(for: focusedID)
+        {
             globalStatusBar.updateFromPane(
                 cwd: pane.currentDirectory,
                 shellPid: pane.shellProcessID
@@ -439,7 +459,8 @@ class MainWindowController: NSWindowController {
             // Try focusedPaneID first, fall back to any pane in the split tree
             let candidateIDs: [UUID]
             if let focusedID = session.focusedPaneID {
-                candidateIDs = [focusedID] + session.splitTree.allPaneIDs().filter { $0 != focusedID }
+                candidateIDs =
+                    [focusedID] + session.splitTree.allPaneIDs().filter { $0 != focusedID }
             } else {
                 candidateIDs = session.splitTree.allPaneIDs()
             }
@@ -448,21 +469,24 @@ class MainWindowController: NSWindowController {
             var statusPath: String?
             for id in candidateIDs {
                 guard let scv = splitContainerView,
-                      let pane = scv.paneIncludingCache(for: id),
-                      let path = pane.statusFilePath else { continue }
+                    let pane = scv.paneIncludingCache(for: id),
+                    let path = pane.statusFilePath
+                else { continue }
                 statusPath = path
                 break
             }
 
             guard let statusPath = statusPath else { continue }
 
-            let fileStatus = (try? String(contentsOfFile: statusPath, encoding: .utf8))?
+            let fileStatus =
+                (try? String(contentsOfFile: statusPath, encoding: .utf8))?
                 .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
 
             if fileStatus == "running"
                 && session.paneStatus != .running
                 && session.paneStatus != .success
-                && session.paneStatus != .error {
+                && session.paneStatus != .error
+            {
                 session.paneStatus = .running
                 needsReload = true
             } else if fileStatus != "running" && session.paneStatus != .idle {
@@ -515,8 +539,9 @@ class MainWindowController: NSWindowController {
     /// panel uses. Returns nil only when there is no active session or pane.
     private func activeWorktreePath() -> String? {
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID,
-              let pane = splitContainerView.pane(for: focusedID) else { return nil }
+            let focusedID = session.focusedPaneID,
+            let pane = splitContainerView.pane(for: focusedID)
+        else { return nil }
         let cwd = pane.queryShellCwd()
         return GitHelper.repoRoot(from: cwd) ?? cwd
     }
@@ -532,7 +557,9 @@ class MainWindowController: NSWindowController {
 // MARK: - NSToolbarDelegate
 
 extension MainWindowController: NSToolbarDelegate {
-    private func makeToolbarButton(symbolName: String, accessibilityDescription: String, action: Selector) -> ToolbarIconButton {
+    private func makeToolbarButton(
+        symbolName: String, accessibilityDescription: String, action: Selector
+    ) -> ToolbarIconButton {
         let button = ToolbarIconButton()
         button.image = NSImage(
             systemSymbolName: symbolName,
@@ -548,11 +575,16 @@ extension MainWindowController: NSToolbarDelegate {
         return button
     }
 
-    func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
+    func toolbar(
+        _ toolbar: NSToolbar, itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
+        willBeInsertedIntoToolbar flag: Bool
+    ) -> NSToolbarItem? {
         switch itemIdentifier {
         case .sidebarToggle:
             let item = NSToolbarItem(itemIdentifier: .sidebarToggle)
-            item.view = makeToolbarButton(symbolName: "sidebar.left", accessibilityDescription: "Toggle Sidebar", action: #selector(toolbarToggleSidebar(_:)))
+            item.view = makeToolbarButton(
+                symbolName: "sidebar.left", accessibilityDescription: "Toggle Sidebar",
+                action: #selector(toolbarToggleSidebar(_:)))
             item.isBordered = false
             item.label = "Sidebar"
             return item
@@ -564,10 +596,11 @@ extension MainWindowController: NSToolbarDelegate {
             let editorDropdown = EditorDropdownButton()
             editorDropdown.onOpenFile = { [weak self] bundleID in
                 guard let self,
-                      let activeSession = self.sessionManager.activeSession,
-                      let focusedID = activeSession.focusedPaneID,
-                      let pane = self.splitContainerView.pane(for: focusedID),
-                      let cwd = pane.currentDirectory else { return }
+                    let activeSession = self.sessionManager.activeSession,
+                    let focusedID = activeSession.focusedPaneID,
+                    let pane = self.splitContainerView.pane(for: focusedID),
+                    let cwd = pane.currentDirectory
+                else { return }
                 ExternalEditorHelper.openIn(filePath: cwd, bundleID: bundleID)
             }
             editorDropdown.heightAnchor.constraint(equalToConstant: 22).isActive = true
@@ -577,10 +610,22 @@ extension MainWindowController: NSToolbarDelegate {
             stack.orientation = .horizontal
             stack.spacing = 10
             stack.addArrangedSubview(editorDropdown)
-            stack.addArrangedSubview(makeToolbarButton(symbolName: "rectangle.split.1x2", accessibilityDescription: "Split Horizontal", action: #selector(toolbarSplitHorizontal(_:))))
-            stack.addArrangedSubview(makeToolbarButton(symbolName: "rectangle.split.2x1", accessibilityDescription: "Split Vertical", action: #selector(toolbarSplitVertical(_:))))
-            stack.addArrangedSubview(makeToolbarButton(symbolName: "plus", accessibilityDescription: "New Session", action: #selector(toolbarNewSession(_:))))
-            stack.addArrangedSubview(makeToolbarButton(symbolName: "sidebar.right", accessibilityDescription: "Toggle Right Sidebar", action: #selector(toolbarToggleEditorSidebar(_:))))
+            stack.addArrangedSubview(
+                makeToolbarButton(
+                    symbolName: "rectangle.split.1x2", accessibilityDescription: "Split Horizontal",
+                    action: #selector(toolbarSplitHorizontal(_:))))
+            stack.addArrangedSubview(
+                makeToolbarButton(
+                    symbolName: "rectangle.split.2x1", accessibilityDescription: "Split Vertical",
+                    action: #selector(toolbarSplitVertical(_:))))
+            stack.addArrangedSubview(
+                makeToolbarButton(
+                    symbolName: "plus", accessibilityDescription: "New Session",
+                    action: #selector(toolbarNewSession(_:))))
+            stack.addArrangedSubview(
+                makeToolbarButton(
+                    symbolName: "sidebar.right", accessibilityDescription: "Toggle Right Sidebar",
+                    action: #selector(toolbarToggleEditorSidebar(_:))))
             item.view = stack
             item.label = "Actions"
             return item
@@ -610,13 +655,128 @@ extension MainWindowController: NSToolbarDelegate {
 // MARK: - SidebarViewDelegate
 
 extension MainWindowController: SidebarViewDelegate {
+    // MARK: - Projects
+
+    func sidebarDidSelectProject(_ project: Project) {
+        projectManager.selectProject(id: project.id)
+        sidebarView.reloadProjects()
+
+        // Stamp the project root on the container so all future tabs/panes auto-cd
+        splitContainerView.projectRootPath = project.rootPath
+
+        // Find existing sessions for this project
+        let projectSessions = sessionManager.sessions(for: project.id)
+
+        if let existing = projectSessions.last ?? projectSessions.first {
+            // Switch to the last session of this project
+            sessionManager.switchToSession(id: existing.id)
+            displaySession(existing)
+        } else {
+            // No sessions yet — create the first one
+            let session = sessionManager.createSession(
+                name: project.displayName, projectID: project.id)
+            displaySession(session)
+        }
+        sidebarView.reloadSessions()
+    }
+
+    func sidebarDidRequestAddProject() {
+        let panel = NSOpenPanel()
+        panel.title = "Open Project Folder"
+        panel.message = "Choose a folder to open as a project"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.prompt = "Open"
+
+        guard let window = self.window else { return }
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let url = panel.url, let self = self else { return }
+            let path = url.path
+
+            // Avoid duplicate projects for the same root path
+            if self.projectManager.hasProject(withRootPath: path) {
+                // Just select the existing one
+                if let existing = self.projectManager.projects.first(where: { $0.rootPath == path })
+                {
+                    self.sidebarDidSelectProject(existing)
+                }
+                return
+            }
+
+            let folderName = url.lastPathComponent
+            let project = self.projectManager.addProject(rootPath: path, name: folderName)
+            self.sidebarView.reloadProjects()
+
+            // Auto-select the new project
+            self.sidebarDidSelectProject(project)
+        }
+    }
+
+    func sidebarDidRequestDeleteProject(_ project: Project) {
+        let wasActive = (projectManager.activeProject?.id == project.id)
+        // Remove all sessions for this project
+        let projectSessions = sessionManager.sessions(for: project.id)
+        for session in projectSessions {
+            let paneIDs = session.splitTree.allPaneIDs()
+            for paneID in paneIDs { splitContainerView.removePane(id: paneID) }
+            splitContainerView.clearCachedPanes(forSessionID: session.id)
+            sessionManager.deleteSession(id: session.id)
+        }
+        projectManager.deleteProject(id: project.id)
+        sidebarView.reloadProjects()
+        if wasActive {
+            splitContainerView.projectRootPath = nil
+            // Switch to whatever session is now active
+            if let active = sessionManager.activeSession {
+                displaySession(active)
+            } else {
+                // No sessions at all — make one unscoped session
+                let s = sessionManager.createSession()
+                displaySession(s)
+            }
+            sidebarView.reloadSessions()
+        }
+    }
+
+    func sidebarDidRequestRenameProject(_ project: Project) {
+        let alert = NSAlert()
+        alert.messageText = "Rename Project"
+        alert.informativeText = "Enter a new name for \"\(project.displayName)\"."
+        alert.addButton(withTitle: "Rename")
+        alert.addButton(withTitle: "Cancel")
+
+        let inputField = NSTextField(frame: NSRect(x: 0, y: 0, width: 200, height: 24))
+        inputField.stringValue = project.displayName
+        inputField.isEditable = true
+        inputField.isSelectable = true
+        inputField.placeholderString = "Project name"
+        alert.accessoryView = inputField
+        alert.window.initialFirstResponder = inputField
+
+        guard let window = self.window else { return }
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard response == .alertFirstButtonReturn else { return }
+            let newName = inputField.stringValue.trimmingCharacters(in: .whitespaces)
+            if !newName.isEmpty {
+                self?.projectManager.renameProject(id: project.id, name: newName)
+                self?.sidebarView.reloadProjects()
+            }
+        }
+    }
+
+    func sidebarDidRequestOpenProjectFolder(_ project: Project) {
+        NSWorkspace.shared.open(URL(fileURLWithPath: project.rootPath))
+    }
+
     func sidebarDidSelectSession(_ session: Session) {
         sessionManager.switchToSession(id: session.id)
         displaySession(session)
     }
 
     func sidebarDidRequestNewSession() {
-        let session = sessionManager.createSession()
+        let session = sessionManager.createSession(projectID: projectManager.activeProject?.id)
         displaySession(session)
         sidebarView.reloadSessions()
     }
@@ -640,7 +800,8 @@ extension MainWindowController: SidebarViewDelegate {
 
     func sidebarCurrentDirectory() -> String? {
         guard let activeID = sessionManager.activeSession?.focusedPaneID,
-              let pane = splitContainerView.pane(for: activeID) else { return nil }
+            let pane = splitContainerView.pane(for: activeID)
+        else { return nil }
         return pane.queryShellCwd()
     }
 
@@ -652,10 +813,11 @@ extension MainWindowController: SidebarViewDelegate {
         // cd into the worktree after the shell spawns
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
             guard let self = self,
-                  let focusedID = session.focusedPaneID,
-                  let pane = self.splitContainerView.pane(for: focusedID),
-                  let tv = pane.terminalView,
-                  let surface = tv.surface else { return }
+                let focusedID = session.focusedPaneID,
+                let pane = self.splitContainerView.pane(for: focusedID),
+                let tv = pane.terminalView,
+                let surface = tv.surface
+            else { return }
             let cmd = "cd \"\(path)\"\r"
             cmd.withCString { ptr in
                 ghostty_surface_text(surface, ptr, UInt(cmd.utf8.count))
@@ -722,6 +884,24 @@ extension MainWindowController: SidebarViewDelegate {
             }
         }
     }
+
+    // MARK: - Project helpers
+
+    /// cd the focused pane of a session into the given project root path.
+    func cdSessionToProjectRoot(_ session: Session, projectPath: String) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+            guard let self = self,
+                let focusedID = session.focusedPaneID,
+                let pane = self.splitContainerView.pane(for: focusedID),
+                let tv = pane.terminalView,
+                let surface = tv.surface
+            else { return }
+            let cmd = "cd \"\(projectPath)\"\r"
+            cmd.withCString { ptr in
+                ghostty_surface_text(surface, ptr, UInt(cmd.utf8.count))
+            }
+        }
+    }
 }
 
 // MARK: - GitPanelViewDelegate
@@ -735,15 +915,17 @@ extension MainWindowController: GitPanelViewDelegate {
         // Open the diff as a tab on the currently focused pane so it lives
         // alongside terminals and uses the same tab bar + shortcuts.
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID,
-              let pane = splitContainerView.pane(for: focusedID) else { return }
+            let focusedID = session.focusedPaneID,
+            let pane = splitContainerView.pane(for: focusedID)
+        else { return }
         pane.addDiffTab(filePath: filePath, staged: staged, repoRoot: repoRoot)
     }
 
     func gitPanelDidRequestOpenCommit(hash: String, repoRoot: String) {
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID,
-              let pane = splitContainerView.pane(for: focusedID) else { return }
+            let focusedID = session.focusedPaneID,
+            let pane = splitContainerView.pane(for: focusedID)
+        else { return }
         pane.addCommitDetailTab(hash: hash, repoRoot: repoRoot)
     }
 }
@@ -829,8 +1011,9 @@ extension MainWindowController: RunnerPanelViewDelegate {
 extension MainWindowController: ContainerPanelViewDelegate {
     func containerPanelDidRequestOpenContainer(id: String) {
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID,
-              let pane = splitContainerView.pane(for: focusedID) else { return }
+            let focusedID = session.focusedPaneID,
+            let pane = splitContainerView.pane(for: focusedID)
+        else { return }
         pane.addContainerTab(id: id)
     }
 }
@@ -856,8 +1039,8 @@ private class SidebarResizeHandle: NSView {
     }
 }
 
-private extension Comparable {
-    func clamped(to range: ClosedRange<Self>) -> Self {
+extension Comparable {
+    fileprivate func clamped(to range: ClosedRange<Self>) -> Self {
         return min(max(self, range.lowerBound), range.upperBound)
     }
 }

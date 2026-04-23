@@ -24,7 +24,8 @@ enum ProcessHelper {
                 }
             }
             if comm == "login" {
-                let grandchildren = allProcs
+                let grandchildren =
+                    allProcs
                     .filter { $0.kp_eproc.e_ppid == childPid }
                     .map { $0.kp_proc.p_pid }
                 result.append(contentsOf: grandchildren)
@@ -103,12 +104,14 @@ enum ProcessHelper {
         // Scan all args for known agent identifiers in paths
         for arg in args {
             let lower = arg.lowercased()
-            if lower.contains("/bin/claude") || lower.contains("claude-code") ||
-               lower.hasSuffix("/claude") || lower.hasSuffix("/claude.exe") {
+            if lower.contains("/bin/claude") || lower.contains("claude-code")
+                || lower.hasSuffix("/claude") || lower.hasSuffix("/claude.exe")
+            {
                 return "claude"
             }
-            if lower.contains("/bin/codex") || lower.contains("@openai/codex") ||
-               lower.hasSuffix("/codex") || lower.hasSuffix("/codex.exe") {
+            if lower.contains("/bin/codex") || lower.contains("@openai/codex")
+                || lower.hasSuffix("/codex") || lower.hasSuffix("/codex.exe")
+            {
                 return "codex"
             }
         }
@@ -122,7 +125,8 @@ enum ProcessHelper {
         let allProcs = allProcesses()
         var current = shellPid
         while true {
-            let children = allProcs
+            let children =
+                allProcs
                 .filter { $0.kp_eproc.e_ppid == current }
                 .map { $0.kp_proc.p_pid }
             guard let last = children.last else {
@@ -139,6 +143,12 @@ enum ProcessHelper {
             .map { $0.kp_proc.p_pid }
     }
 
+    /// Returns true if the given process has at least one live child process.
+    /// This is used to detect whether a shell tab is "busy" (running a command).
+    static func hasChildProcess(of pid: pid_t) -> Bool {
+        return allProcesses().contains { $0.kp_eproc.e_ppid == pid }
+    }
+
     /// Read the git branch from .git/HEAD (fast, no subprocess).
     static func gitBranch(at path: String) -> String? {
         var dir = path
@@ -148,10 +158,13 @@ enum ProcessHelper {
 
             // If .git is a file (worktree), resolve the actual gitdir
             var isDir: ObjCBool = false
-            if FileManager.default.fileExists(atPath: gitPath, isDirectory: &isDir), !isDir.boolValue {
+            if FileManager.default.fileExists(atPath: gitPath, isDirectory: &isDir),
+                !isDir.boolValue
+            {
                 // .git file contains "gitdir: <path>"
                 guard let gitFileContent = try? String(contentsOfFile: gitPath, encoding: .utf8),
-                      gitFileContent.hasPrefix("gitdir: ") else {
+                    gitFileContent.hasPrefix("gitdir: ")
+                else {
                     dir = (dir as NSString).deletingLastPathComponent
                     continue
                 }
@@ -167,7 +180,8 @@ enum ProcessHelper {
             }
 
             if let data = FileManager.default.contents(atPath: headPath),
-               let content = String(data: data, encoding: .utf8) {
+                let content = String(data: data, encoding: .utf8)
+            {
                 if content.hasPrefix("ref: refs/heads/") {
                     return String(content.dropFirst("ref: refs/heads/".count))
                         .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -192,18 +206,24 @@ enum ProcessHelper {
             // Compare its mtime to .git/refs/stash or just check for common dirty markers.
             if FileManager.default.fileExists(atPath: gitDir.path) {
                 // Fast heuristic: check for merge/rebase in progress
-                for marker in ["MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD", "rebase-merge", "rebase-apply"] {
-                    if FileManager.default.fileExists(atPath: gitDir.appendingPathComponent(marker).path) {
+                for marker in [
+                    "MERGE_HEAD", "REBASE_HEAD", "CHERRY_PICK_HEAD", "rebase-merge", "rebase-apply",
+                ] {
+                    if FileManager.default.fileExists(
+                        atPath: gitDir.appendingPathComponent(marker).path)
+                    {
                         return true
                     }
                 }
 
                 // Check if index was modified after HEAD was last updated
                 let headRef = gitDir.appendingPathComponent("HEAD")
-                if let indexAttrs = try? FileManager.default.attributesOfItem(atPath: indexFile.path),
-                   let headAttrs = try? FileManager.default.attributesOfItem(atPath: headRef.path),
-                   let indexMod = indexAttrs[.modificationDate] as? Date,
-                   let headMod = headAttrs[.modificationDate] as? Date {
+                if let indexAttrs = try? FileManager.default.attributesOfItem(
+                    atPath: indexFile.path),
+                    let headAttrs = try? FileManager.default.attributesOfItem(atPath: headRef.path),
+                    let indexMod = indexAttrs[.modificationDate] as? Date,
+                    let headMod = headAttrs[.modificationDate] as? Date
+                {
                     if indexMod > headMod {
                         return true
                     }

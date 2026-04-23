@@ -1498,11 +1498,7 @@ private final class RunnerTaskCell: NSView {
     override func mouseEntered(with event: NSEvent) { isHovered = true }
 
     override func mouseExited(with event: NSEvent) {
-        guard let window = window else { isHovered = false; return }
-        let loc = convert(window.mouseLocationOutsideOfEventStream, from: nil)
-        if !bounds.contains(loc) {
-            isHovered = false
-        }
+        isHovered = false
     }
 
     private func updateHoverBg() {
@@ -1515,6 +1511,7 @@ private final class RunnerTaskCell: NSView {
 
     func configure(task: RunnerTask, status: TaskStatus?, onToggle: @escaping () -> Void) {
         self.onToggle = onToggle
+        isHovered = false
 
         let isRunning: Bool
         if let status, case .running = status { isRunning = true } else { isRunning = false }

@@ -1,5 +1,5 @@
-import Foundation
 import Combine
+import Foundation
 
 class SessionManager: ObservableObject {
     @Published var sessions: [Session] = []
@@ -8,8 +8,8 @@ class SessionManager: ObservableObject {
     /// The currently active session, or nil if no sessions exist.
     var activeSession: Session? {
         guard !sessions.isEmpty,
-              activeSessionIndex >= 0,
-              activeSessionIndex < sessions.count
+            activeSessionIndex >= 0,
+            activeSessionIndex < sessions.count
         else {
             return nil
         }
@@ -42,7 +42,8 @@ class SessionManager: ObservableObject {
         )
         do {
             let configDir = Self.persistenceURL.deletingLastPathComponent()
-            try FileManager.default.createDirectory(at: configDir, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: configDir, withIntermediateDirectories: true)
             let data = try JSONEncoder().encode(state)
             try data.write(to: Self.persistenceURL, options: .atomic)
         } catch {
@@ -52,7 +53,9 @@ class SessionManager: ObservableObject {
 
     static func restore() -> SessionManager? {
         guard let data = try? Data(contentsOf: persistenceURL) else { return nil }
-        guard let state = try? JSONDecoder().decode(PersistedState.self, from: data) else { return nil }
+        guard let state = try? JSONDecoder().decode(PersistedState.self, from: data) else {
+            return nil
+        }
         guard !state.sessions.isEmpty else { return nil }
 
         let manager = SessionManager(restored: true)
@@ -74,12 +77,24 @@ class SessionManager: ObservableObject {
         // No default session created
     }
 
+    // MARK: - Helpers
+
+    /// All sessions belonging to a specific project.
+    func sessions(for projectID: UUID) -> [Session] {
+        sessions.filter { $0.projectID == projectID }
+    }
+
+    /// Sessions with no project association.
+    var unscopedSessions: [Session] {
+        sessions.filter { $0.projectID == nil }
+    }
+
     // MARK: - Create
 
     @discardableResult
-    func createSession(name: String? = nil) -> Session {
+    func createSession(name: String? = nil, projectID: UUID? = nil) -> Session {
         let sessionName = name ?? nextSessionName()
-        let session = Session(name: sessionName)
+        let session = Session(name: sessionName, projectID: projectID)
 
         // Forward child objectWillChange so the manager's subscribers
         // are notified when any session changes.
@@ -155,8 +170,8 @@ class SessionManager: ObservableObject {
 
     func moveSession(from source: Int, to destination: Int) {
         guard source >= 0, source < sessions.count,
-              destination >= 0, destination < sessions.count,
-              source != destination
+            destination >= 0, destination < sessions.count,
+            source != destination
         else {
             return
         }

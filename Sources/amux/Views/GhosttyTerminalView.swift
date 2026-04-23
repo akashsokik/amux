@@ -58,7 +58,6 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
     /// Focus border layer
     private var focusBorderLayer: CALayer?
 
-
     /// Track the previous pressure stage for force click
     private var prevPressureStage: Int = 0
 
@@ -102,7 +101,9 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
 
     deinit {
         NotificationCenter.default.removeObserver(self)
-        print("[GhosttyTerminalView] DEINIT pane \(String(paneID.uuidString.prefix(4))) surface=\(surface != nil)")
+        print(
+            "[GhosttyTerminalView] DEINIT pane \(String(paneID.uuidString.prefix(4))) surface=\(surface != nil)"
+        )
         trackingAreas.forEach { removeTrackingArea($0) }
         if let surface = surface {
             ghostty_surface_free(surface)
@@ -124,20 +125,28 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
             nsview: Unmanaged.passUnretained(self).toOpaque()
         )
         cfg.userdata = Unmanaged.passUnretained(self).toOpaque()
-        cfg.scale_factor = Double(self.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0)
-        cfg.font_size = 0 // Use config default
+        cfg.scale_factor = Double(
+            self.window?.backingScaleFactor ?? NSScreen.main?.backingScaleFactor ?? 2.0)
+        cfg.font_size = 0  // Use config default
         cfg.context = GHOSTTY_SURFACE_CONTEXT_SPLIT
-        let homeCStr = strdup(NSHomeDirectory())
-        cfg.working_directory = UnsafePointer(homeCStr)
+        let workingDir: String
+        if let projectRoot = ProcessInfo.processInfo.environment["AMUX_PROJECT_ROOT"] {
+            workingDir = projectRoot
+        } else {
+            workingDir = NSHomeDirectory()
+        }
+        let workingDirCStr = strdup(workingDir)
+        cfg.working_directory = UnsafePointer(workingDirCStr)
 
         let surface = ghostty_surface_new(app, &cfg)
-        free(homeCStr)
+        free(workingDirCStr)
         guard let surface = surface else {
             print("[GhosttyTerminalView] ghostty_surface_new failed for pane \(paneID)")
             return
         }
         self.surface = surface
-        print("[GhosttyTerminalView] SURFACE CREATED for pane \(String(paneID.uuidString.prefix(4)))")
+        print(
+            "[GhosttyTerminalView] SURFACE CREATED for pane \(String(paneID.uuidString.prefix(4)))")
 
         // Set initial content scale
         let scale = self.window?.backingScaleFactor ?? 2.0
@@ -174,7 +183,9 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
     }
 
     private func flushPendingTextIfReady() {
-        guard let surface = surface, surfaceCreated, let text = pendingText, !text.isEmpty else { return }
+        guard let surface = surface, surfaceCreated, let text = pendingText, !text.isEmpty else {
+            return
+        }
         pendingText = nil
         text.withCString { ptr in
             ghostty_surface_text(surface, ptr, UInt(text.utf8.count))
@@ -302,17 +313,18 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
 
     override func updateTrackingAreas() {
         trackingAreas.forEach { removeTrackingArea($0) }
-        addTrackingArea(NSTrackingArea(
-            rect: bounds,
-            options: [
-                .mouseEnteredAndExited,
-                .mouseMoved,
-                .inVisibleRect,
-                .activeAlways,
-            ],
-            owner: self,
-            userInfo: nil
-        ))
+        addTrackingArea(
+            NSTrackingArea(
+                rect: bounds,
+                options: [
+                    .mouseEnteredAndExited,
+                    .mouseMoved,
+                    .inVisibleRect,
+                    .activeAlways,
+                ],
+                owner: self,
+                userInfo: nil
+            ))
     }
 
     /// Send the current mouse position to Ghostty from an NSEvent.
@@ -411,7 +423,8 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
 
         // Cmd+scroll = font zoom (per-pane)
         if event.modifierFlags.contains(.command) {
-            let delta = event.hasPreciseScrollingDeltas
+            let delta =
+                event.hasPreciseScrollingDeltas
                 ? event.scrollingDeltaY
                 : event.scrollingDeltaY * 10
             scrollZoomAccumulator += delta
@@ -439,18 +452,18 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         // Build scroll mods as a packed int
         var scrollMods: Int32 = 0
         if event.hasPreciseScrollingDeltas {
-            scrollMods |= (1 << 0) // precision bit
+            scrollMods |= (1 << 0)  // precision bit
         }
         // Momentum phase
         let momentum: Int32
         switch event.momentumPhase {
-        case .began:       momentum = 1
-        case .stationary:  momentum = 2
-        case .changed:     momentum = 3
-        case .ended:       momentum = 4
-        case .cancelled:   momentum = 5
-        case .mayBegin:    momentum = 6
-        default:           momentum = 0
+        case .began: momentum = 1
+        case .stationary: momentum = 2
+        case .changed: momentum = 3
+        case .ended: momentum = 4
+        case .cancelled: momentum = 5
+        case .mayBegin: momentum = 6
+        default: momentum = 0
         }
         scrollMods |= (momentum << 1)
 
@@ -493,7 +506,8 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         // Translate mods for option-as-alt etc.
         // ghostty_surface_key_translation_mods returns ghostty_input_mods_e directly --
         // do NOT round-trip through NSEvent.ModifierFlags (different bit layout).
-        let translationModsGhostty = ghostty_surface_key_translation_mods(surface, ghosttyMods(event.modifierFlags))
+        let translationModsGhostty = ghostty_surface_key_translation_mods(
+            surface, ghosttyMods(event.modifierFlags))
 
         // Build translation mods -- keep hidden bits, swap known ones.
         // Only translate control/option/command; always preserve shift from
@@ -513,18 +527,19 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         if translationMods == event.modifierFlags {
             translationEvent = event
         } else {
-            translationEvent = NSEvent.keyEvent(
-                with: event.type,
-                location: event.locationInWindow,
-                modifierFlags: translationMods,
-                timestamp: event.timestamp,
-                windowNumber: event.windowNumber,
-                context: nil,
-                characters: event.characters(byApplyingModifiers: translationMods) ?? "",
-                charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
-                isARepeat: event.isARepeat,
-                keyCode: event.keyCode
-            ) ?? event
+            translationEvent =
+                NSEvent.keyEvent(
+                    with: event.type,
+                    location: event.locationInWindow,
+                    modifierFlags: translationMods,
+                    timestamp: event.timestamp,
+                    windowNumber: event.windowNumber,
+                    context: nil,
+                    characters: event.characters(byApplyingModifiers: translationMods) ?? "",
+                    charactersIgnoringModifiers: event.charactersIgnoringModifiers ?? "",
+                    isARepeat: event.isARepeat,
+                    keyCode: event.keyCode
+                ) ?? event
         }
 
         let action = event.isARepeat ? GHOSTTY_ACTION_REPEAT : GHOSTTY_ACTION_PRESS
@@ -549,7 +564,8 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         if let list = keyTextAccumulator, !list.isEmpty {
             // We have composed text from the input system
             for text in list {
-                _ = sendKeyAction(action, event: event, translationEvent: translationEvent, text: text)
+                _ = sendKeyAction(
+                    action, event: event, translationEvent: translationEvent, text: text)
             }
         } else {
             // Regular key event
@@ -586,11 +602,12 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
             // Check if the correct side is pressed
             let sidePressed: Bool
             switch event.keyCode {
-            case 0x3C: sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERSHIFTKEYMASK) != 0
+            case 0x3C:
+                sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERSHIFTKEYMASK) != 0
             case 0x3E: sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERCTLKEYMASK) != 0
             case 0x3D: sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERALTKEYMASK) != 0
             case 0x36: sidePressed = event.modifierFlags.rawValue & UInt(NX_DEVICERCMDKEYMASK) != 0
-            default:   sidePressed = true
+            default: sidePressed = true
             }
             if sidePressed {
                 action = GHOSTTY_ACTION_PRESS
@@ -621,7 +638,7 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
             }
 
             // Arrow keys with Cmd (pane nav, resize) -- let menu handle them
-            let arrowKeyCodes: Set<UInt16> = [123, 124, 125, 126] // left, right, down, up
+            let arrowKeyCodes: Set<UInt16> = [123, 124, 125, 126]  // left, right, down, up
             if arrowKeyCodes.contains(event.keyCode) {
                 return false
             }
@@ -641,9 +658,9 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         }
 
         // Handle C-/ as C-_ (prevents system beep)
-        if event.charactersIgnoringModifiers == "/" &&
-           event.modifierFlags.contains(.control) &&
-           event.modifierFlags.isDisjoint(with: [.shift, .command, .option]) {
+        if event.charactersIgnoringModifiers == "/" && event.modifierFlags.contains(.control)
+            && event.modifierFlags.isDisjoint(with: [.shift, .command, .option])
+        {
             let finalEvent = NSEvent.keyEvent(
                 with: .keyDown,
                 location: event.locationInWindow,
@@ -663,8 +680,7 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         }
 
         // Handle C-Enter (prevent context menu)
-        if event.charactersIgnoringModifiers == "\r" &&
-           event.modifierFlags.contains(.control) {
+        if event.charactersIgnoringModifiers == "\r" && event.modifierFlags.contains(.control) {
             let finalEvent = NSEvent.keyEvent(
                 with: .keyDown,
                 location: event.locationInWindow,
@@ -769,7 +785,9 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
         return markedText.length > 0
     }
 
-    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?) -> NSAttributedString? {
+    func attributedSubstring(forProposedRange range: NSRange, actualRange: NSRangePointer?)
+        -> NSAttributedString?
+    {
         return nil
     }
 
@@ -840,16 +858,16 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
 
     private func mouseButton(from buttonNumber: Int) -> ghostty_input_mouse_button_e {
         switch buttonNumber {
-        case 0:  return GHOSTTY_MOUSE_LEFT
-        case 1:  return GHOSTTY_MOUSE_RIGHT
-        case 2:  return GHOSTTY_MOUSE_MIDDLE
-        case 3:  return GHOSTTY_MOUSE_FOUR
-        case 4:  return GHOSTTY_MOUSE_FIVE
-        case 5:  return GHOSTTY_MOUSE_SIX
-        case 6:  return GHOSTTY_MOUSE_SEVEN
-        case 7:  return GHOSTTY_MOUSE_EIGHT
-        case 8:  return GHOSTTY_MOUSE_NINE
-        case 9:  return GHOSTTY_MOUSE_TEN
+        case 0: return GHOSTTY_MOUSE_LEFT
+        case 1: return GHOSTTY_MOUSE_RIGHT
+        case 2: return GHOSTTY_MOUSE_MIDDLE
+        case 3: return GHOSTTY_MOUSE_FOUR
+        case 4: return GHOSTTY_MOUSE_FIVE
+        case 5: return GHOSTTY_MOUSE_SIX
+        case 6: return GHOSTTY_MOUSE_SEVEN
+        case 7: return GHOSTTY_MOUSE_EIGHT
+        case 8: return GHOSTTY_MOUSE_NINE
+        case 9: return GHOSTTY_MOUSE_TEN
         case 10: return GHOSTTY_MOUSE_ELEVEN
         default: return GHOSTTY_MOUSE_UNKNOWN
         }
@@ -861,7 +879,10 @@ class GhosttyTerminalView: NSView, NSTextInputClient {
 extension NSScreen {
     /// Get the CGDirectDisplayID for this screen.
     var displayID: UInt32? {
-        guard let screenNumber = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? NSNumber else {
+        guard
+            let screenNumber = deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")]
+                as? NSNumber
+        else {
             return nil
         }
         return screenNumber.uint32Value
