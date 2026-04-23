@@ -7,12 +7,14 @@ enum PaneTabKind {
     case terminal
     case diff
     case commitDetail
+    case container
 }
 
 struct PaneTab {
     let id: UUID
     var title: String = "Terminal"
     var kind: PaneTabKind = .terminal
+    var isBusy: Bool = false
 }
 
 // MARK: - Drop Edge
@@ -39,7 +41,10 @@ protocol TerminalPaneDelegate: AnyObject {
 /// The split tree still manages panes; tabs are internal to each pane.
 class TerminalPane: NSView {
     let paneID: UUID
-    weak var delegate: TerminalPaneDelegate?
+    var delegate: TerminalPaneDelegate?
+
+    /// When set, every new terminal tab will automatically `cd` to this path.
+    var projectRootPath: String?
 
     // MARK: - Status file
 
@@ -58,10 +63,14 @@ class TerminalPane: NSView {
     private var terminalViewsByTab: [UUID: GhosttyTerminalView] = [:]
     private var diffViewsByTab: [UUID: DiffTabView] = [:]
     private var commitDetailViewsByTab: [UUID: CommitDetailTabView] = [:]
+    private var containerViewsByTab: [UUID: ContainerTabView] = [:]
 
-    /// Content view (terminal / diff / commit detail) backing the given tab.
+    /// Content view (terminal / diff / commit detail / container) backing the given tab.
     private func contentView(forTabID id: UUID) -> NSView? {
-        return terminalViewsByTab[id] ?? diffViewsByTab[id] ?? commitDetailViewsByTab[id]
+        return terminalViewsByTab[id]
+            ?? diffViewsByTab[id]
+            ?? commitDetailViewsByTab[id]
+            ?? containerViewsByTab[id]
     }
 
     private func tabKind(_ id: UUID) -> PaneTabKind {
@@ -87,7 +96,8 @@ class TerminalPane: NSView {
     var title: String {
         get {
             guard let id = activeTabID,
-                  let tab = tabs.first(where: { $0.id == id }) else { return "Terminal" }
+                let tab = tabs.first(where: { $0.id == id })
+            else { return "Terminal" }
             return tab.title
         }
         set {
@@ -112,7 +122,8 @@ class TerminalPane: NSView {
         // Backfill: if the active tab's PID isn't in shellPidsByTab
         // (e.g. first tab discovered before per-tab tracking), add it
         if let tabID = activeTabID, let pid = shellPid,
-           shellPidsByTab[tabID] == nil {
+            shellPidsByTab[tabID] == nil
+        {
             shellPidsByTab[tabID] = pid
             result.append((tabID: tabID, pid: pid))
         }
@@ -141,14 +152,25 @@ class TerminalPane: NSView {
 
     // MARK: - Init
 
-    init(paneID: UUID, skipInitialTab: Bool = false) {
+    /// Create a pane.
+    /// - Parameters:
+    ///   - paneID: stable id used by the split tree.
+    ///   - skipInitialTab: when true, no terminal tab is spawned. Used when a
+    ///     dragged-in tab will populate the pane instead.
+    ///   - initialInput: optional text fed into the first tab's shell as soon
+    ///     as its PTY is ready. Leverages `GhosttyTerminalView.sendText`'s
+    ///     pending-text buffer, which defers the write until the shell has had
+    ///     a chance to draw its first prompt. Used by "promote to pane" to run
+    ///     `cd "<cwd>" && <command>\n` in a fresh pane. Ignored when
+    ///     `skipInitialTab` is true.
+    init(paneID: UUID, skipInitialTab: Bool = false, initialInput: String? = nil) {
         self.paneID = paneID
         super.init(frame: .zero)
         wantsLayer = true
         layer?.backgroundColor = Theme.background.cgColor
         setupTabBar()
         if !skipInitialTab {
-            addInitialTab()
+            addInitialTab(initialInput: initialInput)
         }
         setupDropDestination()
         applyGlassOrSolid()
@@ -214,12 +236,17 @@ class TerminalPane: NSView {
         ])
     }
 
-    private func addInitialTab() {
+    private func addInitialTab(initialInput: String? = nil) {
         let tabID = UUID()
         tabs.append(PaneTab(id: tabID))
         activeTabID = tabID
 
         let tv = makeTerminalView(tabID: tabID)
+        if let initialInput = initialInput, !initialInput.isEmpty {
+            // sendText buffers until the surface is created, then flushes after
+            // a short delay so the shell prompt is visible first.
+            tv.sendText(initialInput)
+        }
         addSubview(tv)
         refreshTabBar()
     }
@@ -237,10 +264,16 @@ class TerminalPane: NSView {
         setenv("AMUX_STATUS_FILE", statusPath, 1)
         setenv("AMUX_PANE_ID", paneID.uuidString, 1)
         setenv("AMUX_TAB_ID", tabID.uuidString, 1)
+        if let root = projectRootPath {
+            setenv("AMUX_PROJECT_ROOT", root, 1)
+        } else {
+            unsetenv("AMUX_PROJECT_ROOT")
+        }
         body()
         unsetenv("AMUX_STATUS_FILE")
         unsetenv("AMUX_PANE_ID")
         unsetenv("AMUX_TAB_ID")
+        unsetenv("AMUX_PROJECT_ROOT")
     }
 
     // MARK: - Tab Operations
@@ -251,7 +284,8 @@ class TerminalPane: NSView {
 
         // Insert after active tab
         if let activeID = activeTabID,
-           let idx = tabs.firstIndex(where: { $0.id == activeID }) {
+            let idx = tabs.firstIndex(where: { $0.id == activeID })
+        {
             tabs.insert(tab, at: idx + 1)
         } else {
             tabs.append(tab)
@@ -276,8 +310,67 @@ class TerminalPane: NSView {
         if isFocused { tv.focus() }
     }
 
+    // MARK: - Busy-tab detection
+
+    /// Returns true if the tab has a running child process (something other than
+    /// the idle shell itself) or is a non-terminal kind (diff, container, etc.).
+    private func isTabBusy(_ tabID: UUID) -> Bool {
+        guard let tab = tabs.first(where: { $0.id == tabID }) else { return false }
+
+        // Non-terminal tabs always count as "busy" – they represent deliberate content.
+        guard tab.kind == .terminal else { return true }
+
+        // For terminal tabs, check whether the shell has a running child process.
+        // We do this by looking for any process whose parent PID is the shell PID.
+        guard let shellPid = shellPidsByTab[tabID] ?? (activeTabID == tabID ? self.shellPid : nil)
+        else {
+            return false
+        }
+
+        // Walk /proc-style via sysctl to find child processes of the shell.
+        // A simpler cross-platform approach: check if the shell has any children
+        // by asking for all PIDs and checking their ppid.
+        return ProcessHelper.hasChildProcess(of: shellPid)
+    }
+
     func closeTab(_ tabID: UUID) {
         guard let idx = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+
+        if isTabBusy(tabID) {
+            let tab = tabs[idx]
+            let tabTitle = tab.title
+            let alert = NSAlert()
+            alert.messageText = "Close \"\(tabTitle)\"?"
+            alert.informativeText =
+                tab.kind == .terminal
+                ? "This tab has a running process. Closing it will terminate that process."
+                : "This tab has unsaved content. Are you sure you want to close it?"
+            alert.alertStyle = .warning
+            alert.addButton(withTitle: "Close Tab")
+            alert.addButton(withTitle: "Cancel")
+
+            // Show the alert as a sheet if we have a window, otherwise modal.
+            if let window = self.window {
+                alert.beginSheetModal(for: window) { [weak self] response in
+                    if response == .alertFirstButtonReturn {
+                        self?.performCloseTab(tabID, at: idx)
+                    }
+                }
+            } else {
+                let response = alert.runModal()
+                if response == .alertFirstButtonReturn {
+                    performCloseTab(tabID, at: idx)
+                }
+            }
+            return
+        }
+
+        performCloseTab(tabID, at: idx)
+    }
+
+    private func performCloseTab(_ tabID: UUID, at idx: Int) {
+        // Re-fetch idx in case tabs array changed (e.g. after async sheet).
+        let currentIdx = tabs.firstIndex(where: { $0.id == tabID }) ?? idx
 
         if let tv = terminalViewsByTab.removeValue(forKey: tabID) {
             tv.removeFromSuperview()
@@ -285,8 +378,11 @@ class TerminalPane: NSView {
             dv.removeFromSuperview()
         } else if let cv = commitDetailViewsByTab.removeValue(forKey: tabID) {
             cv.removeFromSuperview()
+        } else if let ctv = containerViewsByTab.removeValue(forKey: tabID) {
+            ctv.removeFromSuperview()
         }
-        tabs.remove(at: idx)
+        shellPidsByTab.removeValue(forKey: tabID)
+        tabs.remove(at: currentIdx)
 
         if tabs.isEmpty {
             // Last tab -- close the pane
@@ -296,7 +392,7 @@ class TerminalPane: NSView {
 
         // Switch to an adjacent tab if we closed the active one
         if activeTabID == tabID {
-            let newIdx = min(idx, tabs.count - 1)
+            let newIdx = min(currentIdx, tabs.count - 1)
             switchToTab(tabs[newIdx].id)
         }
 
@@ -329,7 +425,8 @@ class TerminalPane: NSView {
         let tab = PaneTab(id: tabID, title: title, kind: .diff)
 
         if let activeID = activeTabID,
-           let idx = tabs.firstIndex(where: { $0.id == activeID }) {
+            let idx = tabs.firstIndex(where: { $0.id == activeID })
+        {
             tabs.insert(tab, at: idx + 1)
         } else {
             tabs.append(tab)
@@ -340,6 +437,7 @@ class TerminalPane: NSView {
             terminalViewsByTab[currentID]?.isFocused = false
             diffViewsByTab[currentID]?.isHidden = true
             commitDetailViewsByTab[currentID]?.isHidden = true
+            containerViewsByTab[currentID]?.isHidden = true
         }
 
         let dv = DiffTabView(filePath: filePath, scope: scope, repoRoot: repoRoot)
@@ -367,7 +465,8 @@ class TerminalPane: NSView {
         let tab = PaneTab(id: tabID, title: shortHash, kind: .commitDetail)
 
         if let activeID = activeTabID,
-           let idx = tabs.firstIndex(where: { $0.id == activeID }) {
+            let idx = tabs.firstIndex(where: { $0.id == activeID })
+        {
             tabs.insert(tab, at: idx + 1)
         } else {
             tabs.append(tab)
@@ -378,6 +477,7 @@ class TerminalPane: NSView {
             terminalViewsByTab[currentID]?.isFocused = false
             diffViewsByTab[currentID]?.isHidden = true
             commitDetailViewsByTab[currentID]?.isHidden = true
+            containerViewsByTab[currentID]?.isHidden = true
         }
 
         let cv = CommitDetailTabView(hash: hash, repoRoot: repoRoot)
@@ -396,6 +496,57 @@ class TerminalPane: NSView {
         refreshTabBar()
     }
 
+    /// Open a container-detail tab (or focus the existing one for the same id).
+    func addContainerTab(id: String) {
+        for tab in tabs where tab.kind == .container {
+            if let cv = containerViewsByTab[tab.id], cv.matches(containerID: id) {
+                if activeTabID != tab.id { switchToTab(tab.id) }
+                cv.reload()
+                return
+            }
+        }
+
+        let tabID = UUID()
+        let title = "container \(String(id.prefix(6)))"
+        let tab = PaneTab(id: tabID, title: title, kind: .container)
+
+        if let activeID = activeTabID,
+            let idx = tabs.firstIndex(where: { $0.id == activeID })
+        {
+            tabs.insert(tab, at: idx + 1)
+        } else {
+            tabs.append(tab)
+        }
+
+        if let currentID = activeTabID {
+            terminalViewsByTab[currentID]?.isHidden = true
+            terminalViewsByTab[currentID]?.isFocused = false
+            diffViewsByTab[currentID]?.isHidden = true
+            commitDetailViewsByTab[currentID]?.isHidden = true
+            containerViewsByTab[currentID]?.isHidden = true
+        }
+
+        let cv = ContainerTabView(containerID: id)
+        cv.onRequestOpenTerminal = { [weak self] command in
+            self?.addTerminalTab(withInitialCommand: command)
+        }
+        containerViewsByTab[tabID] = cv
+        addSubview(cv)
+        activeTabID = tabID
+
+        layoutTerminalViews()
+        refreshTabBar()
+    }
+
+    /// Spawn a new terminal tab and queue the supplied command (typically with
+    /// a trailing newline) so it runs as soon as the shell prompt appears.
+    func addTerminalTab(withInitialCommand command: String) {
+        addNewTab()
+        if let activeID = activeTabID, let tv = terminalViewsByTab[activeID] {
+            tv.sendText(command)
+        }
+    }
+
     func closeActiveTab() {
         guard let id = activeTabID else { return }
         closeTab(id)
@@ -403,7 +554,9 @@ class TerminalPane: NSView {
 
     /// Close the tab whose terminal view matches (e.g. when its shell exits).
     func closeTab(for terminalView: GhosttyTerminalView) {
-        guard let tabID = terminalViewsByTab.first(where: { $0.value === terminalView })?.key else { return }
+        guard let tabID = terminalViewsByTab.first(where: { $0.value === terminalView })?.key else {
+            return
+        }
         closeTab(tabID)
     }
 
@@ -416,6 +569,7 @@ class TerminalPane: NSView {
             terminalViewsByTab[currentID]?.isFocused = false
             diffViewsByTab[currentID]?.isHidden = true
             commitDetailViewsByTab[currentID]?.isHidden = true
+            containerViewsByTab[currentID]?.isHidden = true
         }
 
         activeTabID = tabID
@@ -427,6 +581,8 @@ class TerminalPane: NSView {
             dv.isHidden = false
         } else if let cv = commitDetailViewsByTab[tabID] {
             cv.isHidden = false
+        } else if let ctv = containerViewsByTab[tabID] {
+            ctv.isHidden = false
         }
 
         layoutTerminalViews()
@@ -439,13 +595,15 @@ class TerminalPane: NSView {
 
     func selectNextTab() {
         guard tabs.count > 1, let activeID = activeTabID,
-              let idx = tabs.firstIndex(where: { $0.id == activeID }) else { return }
+            let idx = tabs.firstIndex(where: { $0.id == activeID })
+        else { return }
         switchToTab(tabs[(idx + 1) % tabs.count].id)
     }
 
     func selectPreviousTab() {
         guard tabs.count > 1, let activeID = activeTabID,
-              let idx = tabs.firstIndex(where: { $0.id == activeID }) else { return }
+            let idx = tabs.firstIndex(where: { $0.id == activeID })
+        else { return }
         switchToTab(tabs[(idx - 1 + tabs.count) % tabs.count].id)
     }
 
@@ -455,8 +613,9 @@ class TerminalPane: NSView {
     /// Diff tabs cannot be extracted (they live where they were opened).
     func extractTab(_ tabID: UUID) -> (PaneTab, GhosttyTerminalView)? {
         guard let idx = tabs.firstIndex(where: { $0.id == tabID }),
-              tabs[idx].kind == .terminal,
-              let tv = terminalViewsByTab.removeValue(forKey: tabID) else { return nil }
+            tabs[idx].kind == .terminal,
+            let tv = terminalViewsByTab.removeValue(forKey: tabID)
+        else { return nil }
 
         let tab = tabs[idx]
         tv.removeFromSuperview()
@@ -504,7 +663,9 @@ class TerminalPane: NSView {
     // MARK: - Title / pwd helpers (called from AppDelegate callbacks)
 
     func setTitle(_ title: String, for terminalView: GhosttyTerminalView) {
-        guard let tabID = terminalViewsByTab.first(where: { $0.value === terminalView })?.key else { return }
+        guard let tabID = terminalViewsByTab.first(where: { $0.value === terminalView })?.key else {
+            return
+        }
         setTitle(title, forTabID: tabID)
     }
 
@@ -534,7 +695,8 @@ class TerminalPane: NSView {
 
     private func setTitle(_ title: String, forTabID tabID: UUID?) {
         guard let tabID = tabID,
-              let idx = tabs.firstIndex(where: { $0.id == tabID }) else { return }
+            let idx = tabs.firstIndex(where: { $0.id == tabID })
+        else { return }
         tabs[idx].title = title
         if tabID == activeTabID {
             delegate?.terminalPane(self, didUpdateTitle: title)
@@ -547,7 +709,10 @@ class TerminalPane: NSView {
     private func refreshTabBar() {
         tabBarHeightConstraint.constant = PaneTabBar.barHeight
         tabBar.isHidden = false
-        tabBar.updateTabs(tabs.map { (id: $0.id, title: $0.title) }, activeID: activeTabID)
+        tabBar.updateTabs(
+            tabs.map { (id: $0.id, title: $0.title, isBusy: isTabBusy($0.id)) },
+            activeID: activeTabID
+        )
         layoutTerminalViews()
     }
 
@@ -574,6 +739,10 @@ class TerminalPane: NSView {
             cv.frame = terminalFrame
             cv.isHidden = (id != activeTabID)
         }
+        for (id, ctv) in containerViewsByTab {
+            ctv.frame = terminalFrame
+            ctv.isHidden = (id != activeTabID)
+        }
     }
 
     override func layout() {
@@ -593,11 +762,15 @@ class TerminalPane: NSView {
     private func createSurfacesIfNeeded(preferredTabIDForPidDiscovery tabID: UUID?) {
         guard window != nil else { return }
         guard let appDelegate = NSApp.delegate as? AppDelegate,
-              let ghosttyApp = appDelegate.ghosttyApp,
-              let app = ghosttyApp.app else { return }
+            let ghosttyApp = appDelegate.ghosttyApp,
+            let app = ghosttyApp.app
+        else { return }
 
-        let pendingTabs = terminalViewsByTab
-            .filter { $0.value.surface == nil && $0.value.bounds.width > 0 && $0.value.bounds.height > 0 }
+        let pendingTabs =
+            terminalViewsByTab
+            .filter {
+                $0.value.surface == nil && $0.value.bounds.width > 0 && $0.value.bounds.height > 0
+            }
 
         guard !pendingTabs.isEmpty else { return }
 
@@ -643,9 +816,10 @@ class TerminalPane: NSView {
 
             // If multiple new PIDs, prefer the one matching the user's shell name
             let shellName = URL(fileURLWithPath: TerminalPane.userShell()).lastPathComponent
-            let matched = newPids.first(where: { pid in
-                ProcessHelper.name(of: pid) == shellName
-            }) ?? newPids.first
+            let matched =
+                newPids.first(where: { pid in
+                    ProcessHelper.name(of: pid) == shellName
+                }) ?? newPids.first
 
             if let pid = matched {
                 self.shellPid = pid
@@ -676,8 +850,9 @@ class TerminalPane: NSView {
             // Skip PIDs already claimed by other tabs
             guard !knownPids.contains(pid) else { continue }
             if let name = ProcessHelper.name(of: pid),
-               name == shellName,
-               let cwd = ProcessHelper.cwd(of: pid) {
+                name == shellName,
+                let cwd = ProcessHelper.cwd(of: pid)
+            {
                 shellPid = pid
                 if let t = tabID {
                     shellPidsByTab[t] = pid
@@ -718,7 +893,6 @@ class TerminalPane: NSView {
     func increaseFontSize() { terminalView?.increaseFontSize() }
     func decreaseFontSize() { terminalView?.decreaseFontSize() }
     func resetFontSize() { terminalView?.resetFontSize() }
-
 
     // MARK: - Search
 
@@ -825,23 +999,28 @@ class TerminalPane: NSView {
         let overlayRect: NSRect
         switch edge {
         case .left:
-            overlayRect = NSRect(x: contentRect.minX, y: contentRect.minY,
-                                 width: contentRect.width / 2, height: contentRect.height)
+            overlayRect = NSRect(
+                x: contentRect.minX, y: contentRect.minY,
+                width: contentRect.width / 2, height: contentRect.height)
         case .right:
-            overlayRect = NSRect(x: contentRect.midX, y: contentRect.minY,
-                                 width: contentRect.width / 2, height: contentRect.height)
+            overlayRect = NSRect(
+                x: contentRect.midX, y: contentRect.minY,
+                width: contentRect.width / 2, height: contentRect.height)
         case .top:
-            overlayRect = NSRect(x: contentRect.minX, y: contentRect.midY,
-                                 width: contentRect.width, height: contentRect.height / 2)
+            overlayRect = NSRect(
+                x: contentRect.minX, y: contentRect.midY,
+                width: contentRect.width, height: contentRect.height / 2)
         case .bottom:
-            overlayRect = NSRect(x: contentRect.minX, y: contentRect.minY,
-                                 width: contentRect.width, height: contentRect.height / 2)
+            overlayRect = NSRect(
+                x: contentRect.minX, y: contentRect.minY,
+                width: contentRect.width, height: contentRect.height / 2)
         }
 
         if dropOverlay == nil {
             let overlay = NSView()
             overlay.wantsLayer = true
-            overlay.layer?.backgroundColor = NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
+            overlay.layer?.backgroundColor =
+                NSColor.controlAccentColor.withAlphaComponent(0.15).cgColor
             addSubview(overlay)
             dropOverlay = overlay
         }
@@ -855,7 +1034,8 @@ class TerminalPane: NSView {
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         guard let info = decodeDragInfo(from: sender),
-              delegate?.terminalPane(self, canAcceptDrop: info) == true else {
+            delegate?.terminalPane(self, canAcceptDrop: info) == true
+        else {
             return []
         }
         let local = convert(sender.draggingLocation, from: nil)
@@ -868,7 +1048,8 @@ class TerminalPane: NSView {
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
         guard let info = decodeDragInfo(from: sender),
-              delegate?.terminalPane(self, canAcceptDrop: info) == true else {
+            delegate?.terminalPane(self, canAcceptDrop: info) == true
+        else {
             hideDropOverlay()
             return []
         }
@@ -888,7 +1069,8 @@ class TerminalPane: NSView {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         hideDropOverlay()
         guard let info = decodeDragInfo(from: sender),
-              delegate?.terminalPane(self, canAcceptDrop: info) == true else {
+            delegate?.terminalPane(self, canAcceptDrop: info) == true
+        else {
             return false
         }
         let local = convert(sender.draggingLocation, from: nil)
@@ -907,7 +1089,8 @@ class TerminalPane: NSView {
         var pwd = passwd()
         var result: UnsafeMutablePointer<passwd>?
         guard getpwuid_r(getuid(), &pwd, buffer, bufsize, &result) == 0,
-              result != nil else { return "/bin/zsh" }
+            result != nil
+        else { return "/bin/zsh" }
         return String(cString: pwd.pw_shell)
     }
 }

@@ -1,5 +1,5 @@
-import Foundation
 import AppKit
+import Foundation
 
 enum PaneLayoutPreset: String, CaseIterable {
     case threeVerticalPanes
@@ -73,7 +73,8 @@ enum PaneLayoutPreset: String, CaseIterable {
             return makeEqualStripeTree(direction: .horizontal, paneIDs: paneIDs[...])
         case .fourEqualPanes:
             let leftColumn = makeEqualStripeTree(direction: .horizontal, paneIDs: paneIDs.prefix(2))
-            let rightColumn = makeEqualStripeTree(direction: .horizontal, paneIDs: paneIDs.suffix(2))
+            let rightColumn = makeEqualStripeTree(
+                direction: .horizontal, paneIDs: paneIDs.suffix(2))
             return .split(
                 SplitNode.SplitContainer(
                     direction: .vertical,
@@ -126,12 +127,14 @@ class Session: ObservableObject, Identifiable {
 
     var statusColor: NSColor {
         switch paneStatus {
-        case .idle:    return Theme.quaternaryText
+        case .idle: return Theme.quaternaryText
         case .running: return Theme.primary
         case .success: return NSColor(srgbRed: 0.596, green: 0.765, blue: 0.475, alpha: 1.0)
-        case .error:   return NSColor(srgbRed: 0.878, green: 0.424, blue: 0.459, alpha: 1.0)
+        case .error: return NSColor(srgbRed: 0.878, green: 0.424, blue: 0.459, alpha: 1.0)
         }
     }
+
+    var projectID: UUID?
 
     init(name: String, colorHex: String? = nil) {
         self.id = UUID()
@@ -142,10 +145,20 @@ class Session: ObservableObject, Identifiable {
         self.paneStatus = .idle
         self.createdAt = Date()
         self.focusedPaneID = tree.root?.id
+        self.projectID = nil
+    }
+
+    /// Convenience init that tags the session to a project.
+    convenience init(name: String, projectID: UUID?, colorHex: String? = nil) {
+        self.init(name: name, colorHex: colorHex)
+        self.projectID = projectID
     }
 
     /// Initialize from persisted state.
-    init(id: UUID, name: String, splitTree: SplitTree, focusedPaneID: UUID?, createdAt: Date, colorHex: String) {
+    init(
+        id: UUID, name: String, splitTree: SplitTree, focusedPaneID: UUID?, createdAt: Date,
+        colorHex: String, projectID: UUID?
+    ) {
         self.id = id
         self.name = name
         self.splitTree = splitTree
@@ -153,6 +166,7 @@ class Session: ObservableObject, Identifiable {
         self.paneStatus = .idle
         self.createdAt = createdAt
         self.colorHex = colorHex
+        self.projectID = projectID
     }
 
     // MARK: - Color
@@ -181,6 +195,7 @@ class Session: ObservableObject, Identifiable {
         let focusedPaneID: UUID?
         let createdAt: Date
         let colorHex: String?
+        let projectID: UUID?
 
         init(from session: Session) {
             self.id = session.id
@@ -189,6 +204,7 @@ class Session: ObservableObject, Identifiable {
             self.focusedPaneID = session.focusedPaneID
             self.createdAt = session.createdAt
             self.colorHex = session.colorHex
+            self.projectID = session.projectID
         }
 
         func toSession() -> Session {
@@ -198,7 +214,8 @@ class Session: ObservableObject, Identifiable {
                 splitTree: splitTree.toSplitTree(),
                 focusedPaneID: focusedPaneID,
                 createdAt: createdAt,
-                colorHex: colorHex ?? Session.randomColorHex()
+                colorHex: colorHex ?? Session.randomColorHex(),
+                projectID: projectID
             )
         }
     }
@@ -210,9 +227,11 @@ class Session: ObservableObject, Identifiable {
     @discardableResult
     func splitFocusedPane(direction: SplitDirection) -> UUID? {
         guard let focusedID = focusedPaneID else { return nil }
-        guard let (_, newID) = splitTree.insert(
-            splitting: focusedID, direction: direction
-        ) else {
+        guard
+            let (_, newID) = splitTree.insert(
+                splitting: focusedID, direction: direction
+            )
+        else {
             return nil
         }
         // Move focus to the newly created pane.
@@ -237,7 +256,8 @@ class Session: ObservableObject, Identifiable {
             nextFocusID = nil
         } else {
             // Try to focus the next pane, falling back to previous.
-            nextFocusID = splitTree.focusTarget(from: focusedID, direction: .next)
+            nextFocusID =
+                splitTree.focusTarget(from: focusedID, direction: .next)
                 .flatMap({ $0 == focusedID ? nil : $0 })
                 ?? allIDs.first(where: { $0 != focusedID })
         }

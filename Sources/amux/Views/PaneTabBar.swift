@@ -148,13 +148,14 @@ class PaneTabBar: NSView {
 
     // MARK: - Update
 
-    func updateTabs(_ tabs: [(id: UUID, title: String)], activeID: UUID?) {
+    func updateTabs(_ tabs: [(id: UUID, title: String, isBusy: Bool)], activeID: UUID?) {
         tabItemViews.forEach { $0.removeFromSuperview() }
         tabItemViews.removeAll()
 
         for tab in tabs {
             let item = PaneTabItemView(tabID: tab.id, title: tab.title)
             item.isActive = (tab.id == activeID)
+            item.isBusy = tab.isBusy
             item.showCloseButton = tabs.count > 1
             item.sourcePaneID = ownerPaneID
             item.delegate = self
@@ -233,7 +234,8 @@ class PaneTabBar: NSView {
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
         guard let info = decodeDragInfo(from: sender),
-              delegate?.tabBar(self, canAcceptDrop: info) == true else {
+            delegate?.tabBar(self, canAcceptDrop: info) == true
+        else {
             return []
         }
         let idx = insertionIndex(for: sender.draggingLocation)
@@ -243,7 +245,8 @@ class PaneTabBar: NSView {
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
         guard let info = decodeDragInfo(from: sender),
-              delegate?.tabBar(self, canAcceptDrop: info) == true else {
+            delegate?.tabBar(self, canAcceptDrop: info) == true
+        else {
             hideInsertionIndicator()
             return []
         }
@@ -259,7 +262,8 @@ class PaneTabBar: NSView {
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         hideInsertionIndicator()
         guard let info = decodeDragInfo(from: sender),
-              delegate?.tabBar(self, canAcceptDrop: info) == true else {
+            delegate?.tabBar(self, canAcceptDrop: info) == true
+        else {
             return false
         }
         let idx = insertionIndex(for: sender.draggingLocation)
@@ -294,7 +298,7 @@ class PaneTabItemView: NSView {
     var sourcePaneID: UUID = UUID()
     weak var delegate: PaneTabItemViewDelegate?
 
-    private let iconView = NSImageView()
+    private let statusSquare = NSView()
     private let titleLabel = NSTextField(labelWithString: "")
     private let closeButton = DimIconButton()
     private let highlightView = NSView()
@@ -306,6 +310,10 @@ class PaneTabItemView: NSView {
     }
 
     var isActive: Bool = false {
+        didSet { updateAppearance() }
+    }
+
+    var isBusy: Bool = false {
         didSet { updateAppearance() }
     }
 
@@ -336,16 +344,12 @@ class PaneTabItemView: NSView {
         highlightView.layer?.cornerRadius = Theme.CornerRadius.element
         addSubview(highlightView)
 
-        iconView.image = NSImage(
-            systemSymbolName: "terminal",
-            accessibilityDescription: "Terminal"
-        )?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 11, weight: .medium)
-        )
+        statusSquare.wantsLayer = true
+        statusSquare.layer?.cornerRadius = 0
         let colorIndex = abs(tabID.hashValue) % Session.palette.count
-        iconView.contentTintColor = NSColor(hexString: Session.palette[colorIndex]) ?? Theme.quaternaryText
-        iconView.imageScaling = .scaleProportionallyUpOrDown
-        addSubview(iconView)
+        let paletteColor = NSColor(hexString: Session.palette[colorIndex]) ?? Theme.quaternaryText
+        statusSquare.layer?.backgroundColor = paletteColor.cgColor
+        addSubview(statusSquare)
 
         titleLabel.stringValue = title
         titleLabel.font = Theme.Fonts.label(size: 12)
@@ -377,23 +381,27 @@ class PaneTabItemView: NSView {
         updateAppearance()
     }
 
-    private static let minTabWidth: CGFloat = 120
+    private static let minTabWidth: CGFloat = 100
     private static let maxTitleWidth: CGFloat = 120
 
-    private static let iconSize: CGFloat = 14
-    private static let iconGap: CGFloat = 5
+    // status square metrics — matches AgentCellView / SessionCellView
+    private static let squareSize: CGFloat = 8
+    private static let squareLeading: CGFloat = 8
+    private static let squareTitleGap: CGFloat = 6
 
     override var intrinsicContentSize: NSSize {
         let titleWidth = titleLabel.intrinsicContentSize.width
         let clampedTitle = min(titleWidth, PaneTabItemView.maxTitleWidth)
-        let icon = PaneTabItemView.iconSize + PaneTabItemView.iconGap
+        let squareSlot =
+            PaneTabItemView.squareLeading + PaneTabItemView.squareSize
+            + PaneTabItemView.squareTitleGap
         let natural: CGFloat
         if showCloseButton {
-            // padding(8) + icon + title + gap(4) + close(14) + padding(6)
-            natural = 8 + icon + clampedTitle + 4 + 14 + 6
+            // squareSlot + title + gap(4) + close(14) + padding(6)
+            natural = squareSlot + clampedTitle + 4 + 14 + 6
         } else {
-            // padding(8) + icon + title + padding(8)
-            natural = 8 + icon + clampedTitle + 8
+            // squareSlot + title + padding(8)
+            natural = squareSlot + clampedTitle + 8
         }
         return NSSize(width: max(natural, PaneTabItemView.minTabWidth), height: 24)
     }
@@ -402,65 +410,63 @@ class PaneTabItemView: NSView {
         super.layout()
         highlightView.frame = bounds
 
-        let icoS = PaneTabItemView.iconSize
-        let icoGap = PaneTabItemView.iconGap
-        let iconX: CGFloat = 8
-        iconView.frame = NSRect(
-            x: iconX,
-            y: (bounds.height - icoS) / 2,
-            width: icoS,
-            height: icoS
+        let sqS = PaneTabItemView.squareSize
+        let sqX = PaneTabItemView.squareLeading
+        let titleX = sqX + sqS + PaneTabItemView.squareTitleGap
+
+        statusSquare.frame = NSRect(
+            x: sqX,
+            y: (bounds.height - sqS) / 2,
+            width: sqS,
+            height: sqS
         )
 
-        let titleX = iconX + icoS + icoGap
+        let closeSize: CGFloat = 14
+        let closeX = bounds.width - 6 - closeSize
 
-        if showCloseButton {
-            let closeSize: CGFloat = 14
-            let closeX = bounds.width - 6 - closeSize
-            closeButton.frame = NSRect(
-                x: closeX,
-                y: (bounds.height - closeSize) / 2,
-                width: closeSize,
-                height: closeSize
-            )
+        closeButton.frame = NSRect(
+            x: closeX,
+            y: (bounds.height - closeSize) / 2,
+            width: closeSize,
+            height: closeSize
+        )
 
-            let titleWidth = closeX - titleX - 4
-            let titleH = titleLabel.intrinsicContentSize.height
-            titleLabel.frame = NSRect(
-                x: titleX,
-                y: (bounds.height - titleH) / 2,
-                width: max(0, titleWidth),
-                height: titleH
-            )
-        } else {
-            closeButton.frame = .zero
-            let titleWidth = bounds.width - titleX - 8
-            let titleH = titleLabel.intrinsicContentSize.height
-            titleLabel.frame = NSRect(
-                x: titleX,
-                y: (bounds.height - titleH) / 2,
-                width: max(0, titleWidth),
-                height: titleH
-            )
-        }
+        let titleWidth = showCloseButton ? closeX - titleX - 4 : bounds.width - titleX - 8
+        let titleH = titleLabel.intrinsicContentSize.height
+        titleLabel.frame = NSRect(
+            x: titleX,
+            y: (bounds.height - titleH) / 2,
+            width: max(0, titleWidth),
+            height: titleH
+        )
     }
 
     private func updateAppearance() {
         if isActive {
             highlightView.layer?.backgroundColor = Theme.surfaceContainerHigh.cgColor
             titleLabel.textColor = Theme.primaryText
-            iconView.alphaValue = 1.0
         } else if isHovered {
             highlightView.layer?.backgroundColor = Theme.hoverBg.cgColor
             titleLabel.textColor = Theme.secondaryText
-            iconView.alphaValue = 1.0
         } else {
             highlightView.layer?.backgroundColor = NSColor.clear.cgColor
             titleLabel.textColor = Theme.tertiaryText
-            iconView.alphaValue = 1.0
         }
 
-        closeButton.isHidden = !(showCloseButton && (isActive || isHovered))
+        // Status square: accent color when busy, palette color (dimmed when inactive) when idle.
+        // Always visible — gives a persistent at-a-glance state indicator.
+        let colorIndex = abs(tabID.hashValue) % Session.palette.count
+        let paletteColor = NSColor(hexString: Session.palette[colorIndex]) ?? Theme.quaternaryText
+        let squareColor: NSColor
+        if isBusy {
+            squareColor = isActive ? Theme.primary : Theme.primary.withAlphaComponent(0.6)
+        } else {
+            squareColor = isActive ? paletteColor : paletteColor.withAlphaComponent(0.4)
+        }
+        statusSquare.layer?.backgroundColor = squareColor.cgColor
+
+        let showClose = showCloseButton && (isActive || isHovered)
+        closeButton.isHidden = !showClose
         closeButton.refreshDimState()
     }
 
@@ -483,7 +489,7 @@ class PaneTabItemView: NSView {
         let dy = current.y - origin.y
         guard sqrt(dx * dx + dy * dy) > 4 else { return }
 
-        dragOrigin = nil // prevent re-triggering
+        dragOrigin = nil  // prevent re-triggering
 
         let info = TabDragInfo(tabID: tabID, sourcePaneID: sourcePaneID)
         guard let data = try? JSONEncoder().encode(info) else { return }

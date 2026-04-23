@@ -8,6 +8,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     private(set) var ghosttyApp: GhosttyApp?
     private(set) var agentManager: AgentManager!
     private var agentSocketServer: AgentSocketServer!
+    private var projectManager: ProjectManager!
 
     // MARK: - Application Lifecycle
 
@@ -17,7 +18,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Only request notifications when running as a proper .app bundle
         if Bundle.main.bundleIdentifier != nil {
-            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+            UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) {
+                _, _ in
+            }
         }
 
         Theme.registerFonts()
@@ -41,17 +44,21 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         self.ghosttyApp = app
 
         sessionManager = SessionManager.restore() ?? SessionManager()
+        projectManager = ProjectManager.restore() ?? ProjectManager()
 
         agentManager = AgentManager(sessionManager: sessionManager)
 
         agentSocketServer = AgentSocketServer()
         agentSocketServer.onEvent = { [weak self] paneID, tabID, event, data in
-            self?.agentManager.handleHookEvent(paneID: paneID, tabID: tabID, event: event, data: data)
+            self?.agentManager.handleHookEvent(
+                paneID: paneID, tabID: tabID, event: event, data: data)
         }
         agentSocketServer.start()
         agentManager.startPolling()
 
-        windowController = MainWindowController(sessionManager: sessionManager, agentManager: agentManager)
+        windowController = MainWindowController(
+            sessionManager: sessionManager, agentManager: agentManager,
+            projectManager: projectManager)
         windowController.splitContainerView.containerDelegate = self
         windowController.splitContainerView.agentManager = agentManager
 
@@ -69,9 +76,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Focus the first terminal pane after a brief delay for layout
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { [weak self] in
             guard let self = self,
-                  let session = self.sessionManager.activeSession,
-                  let focusedID = session.focusedPaneID,
-                  let pane = self.windowController.splitContainerView.pane(for: focusedID) else { return }
+                let session = self.sessionManager.activeSession,
+                let focusedID = session.focusedPaneID,
+                let pane = self.windowController.splitContainerView.pane(for: focusedID)
+            else { return }
             pane.focus()
         }
     }
@@ -125,7 +133,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Fallback: try executable-relative paths (for SPM dev builds)
-        if shellIntegDir == nil, let execURL = Bundle.main.executableURL?.deletingLastPathComponent() {
+        if shellIntegDir == nil,
+            let execURL = Bundle.main.executableURL?.deletingLastPathComponent()
+        {
             let candidates = [
                 execURL.appendingPathComponent("../Resources/shell-integration").path,
                 execURL.deletingLastPathComponent()
@@ -160,7 +170,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Bash: source via BASH_ENV (only if not already set)
         let bashScript = (shellIntegDir as NSString).appendingPathComponent("amux.bash")
         if ProcessInfo.processInfo.environment["BASH_ENV"] == nil,
-           FileManager.default.fileExists(atPath: bashScript) {
+            FileManager.default.fileExists(atPath: bashScript)
+        {
             setenv("BASH_ENV", bashScript, 1)
         }
 
@@ -188,10 +199,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
         // Fallback for dev builds
         if ProcessInfo.processInfo.environment["AMUX_AGENT_HOOKS_DIR"] == nil,
-           let execURL = Bundle.main.executableURL?.deletingLastPathComponent() {
+            let execURL = Bundle.main.executableURL?.deletingLastPathComponent()
+        {
             let candidates = [
                 execURL.appendingPathComponent("../Resources/agent-hooks").path,
-                execURL.deletingLastPathComponent().appendingPathComponent("Resources/agent-hooks").path,
+                execURL.deletingLastPathComponent().appendingPathComponent("Resources/agent-hooks")
+                    .path,
             ]
             for hookPath in candidates {
                 let exists = FileManager.default.fileExists(atPath: hookPath)
@@ -204,9 +217,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         // Log final state
-        NSLog("[amux] Final AMUX_ZSH_SCRIPT=%@", String(cString: getenv("AMUX_ZSH_SCRIPT") ?? strdup("(not set)")))
-        NSLog("[amux] Final AMUX_AGENT_HOOKS_DIR=%@", String(cString: getenv("AMUX_AGENT_HOOKS_DIR") ?? strdup("(not set)")))
-        NSLog("[amux] Final AMUX_SOCKET_PATH=%@", String(cString: getenv("AMUX_SOCKET_PATH") ?? strdup("(not set)")))
+        NSLog(
+            "[amux] Final AMUX_ZSH_SCRIPT=%@",
+            String(cString: getenv("AMUX_ZSH_SCRIPT") ?? strdup("(not set)")))
+        NSLog(
+            "[amux] Final AMUX_AGENT_HOOKS_DIR=%@",
+            String(cString: getenv("AMUX_AGENT_HOOKS_DIR") ?? strdup("(not set)")))
+        NSLog(
+            "[amux] Final AMUX_SOCKET_PATH=%@",
+            String(cString: getenv("AMUX_SOCKET_PATH") ?? strdup("(not set)")))
     }
 
     /// Ensure Claude Code global hooks point to amux's agent-hook script so we receive
@@ -229,7 +248,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Read existing settings or start fresh
         var settings: [String: Any] = [:]
         if let data = fm.contents(atPath: settingsPath),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        {
             settings = json
         }
 
@@ -240,12 +260,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 [
                     "type": "command",
                     "command": hookScript,
-                    "timeout": 5
+                    "timeout": 5,
                 ] as [String: Any]
-            ]
+            ],
         ]
 
-        let events = ["PreToolUse", "PostToolUse", "Stop", "Notification", "PermissionRequest", "UserPromptSubmit"]
+        let events = [
+            "PreToolUse", "PostToolUse", "Stop", "Notification", "PermissionRequest",
+            "UserPromptSubmit",
+        ]
         var hooks = settings["hooks"] as? [String: Any] ?? [:]
         var changed = false
 
@@ -254,7 +277,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                 // Check if our hook is already registered
                 let alreadyRegistered = existing.contains { entry in
                     guard let entryHooks = entry["hooks"] as? [[String: Any]] else { return false }
-                    return entryHooks.contains { ($0["command"] as? String)?.contains("amux-agent-hook") == true }
+                    return entryHooks.contains {
+                        ($0["command"] as? String)?.contains("amux-agent-hook") == true
+                    }
                 }
                 if alreadyRegistered { continue }
                 // Append our hook alongside existing ones
@@ -272,8 +297,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         settings["hooks"] = hooks
 
-        guard let data = try? JSONSerialization.data(withJSONObject: settings, options: [.prettyPrinted, .sortedKeys]),
-              var jsonString = String(data: data, encoding: .utf8) else {
+        guard
+            let data = try? JSONSerialization.data(
+                withJSONObject: settings, options: [.prettyPrinted, .sortedKeys]),
+            var jsonString = String(data: data, encoding: .utf8)
+        else {
             NSLog("[amux] Failed to serialize Claude Code settings")
             return
         }
@@ -307,7 +335,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Enable codex_hooks feature in config.toml
         var configContents = ""
-        if let data = fm.contents(atPath: configPath), let str = String(data: data, encoding: .utf8) {
+        if let data = fm.contents(atPath: configPath), let str = String(data: data, encoding: .utf8)
+        {
             configContents = str
         }
 
@@ -319,7 +348,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     with: "[features]\ncodex_hooks = true"
                 )
             } else {
-                if !configContents.hasSuffix("\n") && !configContents.isEmpty { configContents += "\n" }
+                if !configContents.hasSuffix("\n") && !configContents.isEmpty {
+                    configContents += "\n"
+                }
                 configContents += "\n[features]\ncodex_hooks = true\n"
             }
             try? configContents.write(toFile: configPath, atomically: true, encoding: .utf8)
@@ -331,18 +362,19 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             "type": "command",
             "command": hookScript,
             "statusMessage": "amux hook",
-            "timeout": 5
+            "timeout": 5,
         ]
         let matcherBlock: [String: Any] = [
             "matcher": "",
-            "hooks": [hookEntry]
+            "hooks": [hookEntry],
         ]
         let events = ["SessionStart", "PreToolUse", "PostToolUse", "UserPromptSubmit", "Stop"]
 
         // Read existing hooks.json or start fresh
         var hooksRoot: [String: Any] = [:]
         if let data = fm.contents(atPath: hooksPath),
-           let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
+            let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+        {
             hooksRoot = json
         }
 
@@ -353,7 +385,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             if let existing = hooks[event] as? [[String: Any]] {
                 let alreadyRegistered = existing.contains { entry in
                     guard let entryHooks = entry["hooks"] as? [[String: Any]] else { return false }
-                    return entryHooks.contains { ($0["command"] as? String)?.contains("amux-agent-hook") == true }
+                    return entryHooks.contains {
+                        ($0["command"] as? String)?.contains("amux-agent-hook") == true
+                    }
                 }
                 if alreadyRegistered { continue }
                 hooks[event] = existing + [matcherBlock]
@@ -370,8 +404,11 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         hooksRoot["hooks"] = hooks
 
-        guard let data = try? JSONSerialization.data(withJSONObject: hooksRoot, options: [.prettyPrinted, .sortedKeys]),
-              var jsonString = String(data: data, encoding: .utf8) else {
+        guard
+            let data = try? JSONSerialization.data(
+                withJSONObject: hooksRoot, options: [.prettyPrinted, .sortedKeys]),
+            var jsonString = String(data: data, encoding: .utf8)
+        else {
             NSLog("[amux] Failed to serialize Codex hooks")
             return
         }
@@ -391,7 +428,8 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Try app bundle first
         if let resourcePath = Bundle.main.resourcePath {
-            let path = (resourcePath as NSString).appendingPathComponent("agent-hooks/amux-agent-hook.sh")
+            let path = (resourcePath as NSString).appendingPathComponent(
+                "agent-hooks/amux-agent-hook.sh")
             if fm.fileExists(atPath: path) { return path }
         }
 
@@ -399,7 +437,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         if let execURL = Bundle.main.executableURL?.deletingLastPathComponent() {
             let candidates = [
                 execURL.appendingPathComponent("../Resources/agent-hooks/amux-agent-hook.sh").path,
-                execURL.deletingLastPathComponent().appendingPathComponent("Resources/agent-hooks/amux-agent-hook.sh").path,
+                execURL.deletingLastPathComponent().appendingPathComponent(
+                    "Resources/agent-hooks/amux-agent-hook.sh"
+                ).path,
             ]
             for path in candidates {
                 if fm.fileExists(atPath: path) { return path }
@@ -444,11 +484,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // App menu
         let appMenuItem = NSMenuItem()
         let appMenu = NSMenu()
-        let aboutItem = NSMenuItem(title: "About amux", action: #selector(showAbout(_:)), keyEquivalent: "")
+        let aboutItem = NSMenuItem(
+            title: "About amux", action: #selector(showAbout(_:)), keyEquivalent: "")
         aboutItem.target = self
         appMenu.addItem(aboutItem)
         appMenu.addItem(NSMenuItem.separator())
-        let quitItem = NSMenuItem(title: "Quit amux", action: #selector(quitApp(_:)), keyEquivalent: "q")
+        let quitItem = NSMenuItem(
+            title: "Quit amux", action: #selector(quitApp(_:)), keyEquivalent: "q")
         quitItem.target = self
         appMenu.addItem(quitItem)
         appMenuItem.submenu = appMenu
@@ -458,37 +500,46 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let editMenuItem = NSMenuItem()
         let editMenu = NSMenu(title: "Edit")
         editMenu.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        editMenu.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        editMenu.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        editMenu.addItem(
+            withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        editMenu.addItem(
+            withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         editMenuItem.submenu = editMenu
         mainMenu.addItem(editMenuItem)
 
-        // Session menu
+        // Project menu
         let sessionMenuItem = NSMenuItem()
-        let sessionMenu = NSMenu(title: "Session")
+        let sessionMenu = NSMenu(title: "Project")
 
-        let newSessionItem = NSMenuItem(title: "New Session", action: #selector(newSession(_:)), keyEquivalent: "T")
+        let newSessionItem = NSMenuItem(
+            title: "New Project Session", action: #selector(newSession(_:)), keyEquivalent: "T")
         newSessionItem.keyEquivalentModifierMask = [.command, .shift]
         newSessionItem.target = self
         sessionMenu.addItem(newSessionItem)
 
-        let closeSessionItem = NSMenuItem(title: "Close Session", action: #selector(closeSession(_:)), keyEquivalent: "W")
+        let closeSessionItem = NSMenuItem(
+            title: "Close Project Session", action: #selector(closeSession(_:)), keyEquivalent: "W")
         closeSessionItem.keyEquivalentModifierMask = [.command, .shift]
         closeSessionItem.target = self
         sessionMenu.addItem(closeSessionItem)
 
-        let renameSessionItem = NSMenuItem(title: "Rename Session", action: #selector(renameSession(_:)), keyEquivalent: "N")
+        let renameSessionItem = NSMenuItem(
+            title: "Rename Project Session", action: #selector(renameSession(_:)),
+            keyEquivalent: "N")
         renameSessionItem.keyEquivalentModifierMask = [.command, .shift]
         renameSessionItem.target = self
         sessionMenu.addItem(renameSessionItem)
 
         sessionMenu.addItem(NSMenuItem.separator())
 
-        let nextSessionItem = NSMenuItem(title: "Next Session", action: #selector(nextSession(_:)), keyEquivalent: "")
+        let nextSessionItem = NSMenuItem(
+            title: "Next Project", action: #selector(nextSession(_:)), keyEquivalent: "")
         nextSessionItem.target = self
         sessionMenu.addItem(nextSessionItem)
 
-        let prevSessionItem = NSMenuItem(title: "Previous Session", action: #selector(previousSession(_:)), keyEquivalent: "")
+        let prevSessionItem = NSMenuItem(
+            title: "Previous Project", action: #selector(previousSession(_:)),
+            keyEquivalent: "")
         prevSessionItem.target = self
         sessionMenu.addItem(prevSessionItem)
 
@@ -496,7 +547,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         for i in 1...9 {
             let item = NSMenuItem(
-                title: "Session \(i)",
+                title: "Project \(i)",
                 action: #selector(switchToSessionByNumber(_:)),
                 keyEquivalent: "\(i)"
             )
@@ -512,31 +563,37 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let paneMenuItem = NSMenuItem()
         let paneMenu = NSMenu(title: "Pane")
 
-        let newTabItem = NSMenuItem(title: "New Tab", action: #selector(newTab(_:)), keyEquivalent: "t")
+        let newTabItem = NSMenuItem(
+            title: "New Tab", action: #selector(newTab(_:)), keyEquivalent: "t")
         newTabItem.target = self
         paneMenu.addItem(newTabItem)
 
-        let closeTabItem = NSMenuItem(title: "Close Tab", action: #selector(closeTab(_:)), keyEquivalent: "w")
+        let closeTabItem = NSMenuItem(
+            title: "Close Tab", action: #selector(closeTab(_:)), keyEquivalent: "w")
         closeTabItem.target = self
         paneMenu.addItem(closeTabItem)
 
-        let nextTabItem = NSMenuItem(title: "Next Tab", action: #selector(nextTab(_:)), keyEquivalent: "]")
+        let nextTabItem = NSMenuItem(
+            title: "Next Tab", action: #selector(nextTab(_:)), keyEquivalent: "]")
         nextTabItem.keyEquivalentModifierMask = [.command, .shift]
         nextTabItem.target = self
         paneMenu.addItem(nextTabItem)
 
-        let prevTabItem = NSMenuItem(title: "Previous Tab", action: #selector(previousTab(_:)), keyEquivalent: "[")
+        let prevTabItem = NSMenuItem(
+            title: "Previous Tab", action: #selector(previousTab(_:)), keyEquivalent: "[")
         prevTabItem.keyEquivalentModifierMask = [.command, .shift]
         prevTabItem.target = self
         paneMenu.addItem(prevTabItem)
 
         paneMenu.addItem(NSMenuItem.separator())
 
-        let splitVItem = NSMenuItem(title: "Split Vertical", action: #selector(splitVertical(_:)), keyEquivalent: "d")
+        let splitVItem = NSMenuItem(
+            title: "Split Vertical", action: #selector(splitVertical(_:)), keyEquivalent: "d")
         splitVItem.target = self
         paneMenu.addItem(splitVItem)
 
-        let splitHItem = NSMenuItem(title: "Split Horizontal", action: #selector(splitHorizontal(_:)), keyEquivalent: "D")
+        let splitHItem = NSMenuItem(
+            title: "Split Horizontal", action: #selector(splitHorizontal(_:)), keyEquivalent: "D")
         splitHItem.keyEquivalentModifierMask = [.command, .shift]
         splitHItem.target = self
         paneMenu.addItem(splitHItem)
@@ -547,56 +604,74 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         paneMenu.addItem(NSMenuItem.separator())
 
-        let navUpItem = NSMenuItem(title: "Navigate Up", action: #selector(navigateUp(_:)), keyEquivalent: String(Character(UnicodeScalar(NSUpArrowFunctionKey)!)))
+        let navUpItem = NSMenuItem(
+            title: "Navigate Up", action: #selector(navigateUp(_:)),
+            keyEquivalent: String(Character(UnicodeScalar(NSUpArrowFunctionKey)!)))
         navUpItem.keyEquivalentModifierMask = [.command, .shift]
         navUpItem.target = self
         paneMenu.addItem(navUpItem)
 
-        let navDownItem = NSMenuItem(title: "Navigate Down", action: #selector(navigateDown(_:)), keyEquivalent: String(Character(UnicodeScalar(NSDownArrowFunctionKey)!)))
+        let navDownItem = NSMenuItem(
+            title: "Navigate Down", action: #selector(navigateDown(_:)),
+            keyEquivalent: String(Character(UnicodeScalar(NSDownArrowFunctionKey)!)))
         navDownItem.keyEquivalentModifierMask = [.command, .shift]
         navDownItem.target = self
         paneMenu.addItem(navDownItem)
 
-        let navLeftItem = NSMenuItem(title: "Navigate Left", action: #selector(navigateLeft(_:)), keyEquivalent: String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!)))
+        let navLeftItem = NSMenuItem(
+            title: "Navigate Left", action: #selector(navigateLeft(_:)),
+            keyEquivalent: String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!)))
         navLeftItem.keyEquivalentModifierMask = [.command, .shift]
         navLeftItem.target = self
         paneMenu.addItem(navLeftItem)
 
-        let navRightItem = NSMenuItem(title: "Navigate Right", action: #selector(navigateRight(_:)), keyEquivalent: String(Character(UnicodeScalar(NSRightArrowFunctionKey)!)))
+        let navRightItem = NSMenuItem(
+            title: "Navigate Right", action: #selector(navigateRight(_:)),
+            keyEquivalent: String(Character(UnicodeScalar(NSRightArrowFunctionKey)!)))
         navRightItem.keyEquivalentModifierMask = [.command, .shift]
         navRightItem.target = self
         paneMenu.addItem(navRightItem)
 
         paneMenu.addItem(NSMenuItem.separator())
 
-        let resizeUpItem = NSMenuItem(title: "Resize Up", action: #selector(resizeUp(_:)), keyEquivalent: String(Character(UnicodeScalar(NSUpArrowFunctionKey)!)))
+        let resizeUpItem = NSMenuItem(
+            title: "Resize Up", action: #selector(resizeUp(_:)),
+            keyEquivalent: String(Character(UnicodeScalar(NSUpArrowFunctionKey)!)))
         resizeUpItem.keyEquivalentModifierMask = [.control, .option]
         resizeUpItem.target = self
         paneMenu.addItem(resizeUpItem)
 
-        let resizeDownItem = NSMenuItem(title: "Resize Down", action: #selector(resizeDown(_:)), keyEquivalent: String(Character(UnicodeScalar(NSDownArrowFunctionKey)!)))
+        let resizeDownItem = NSMenuItem(
+            title: "Resize Down", action: #selector(resizeDown(_:)),
+            keyEquivalent: String(Character(UnicodeScalar(NSDownArrowFunctionKey)!)))
         resizeDownItem.keyEquivalentModifierMask = [.control, .option]
         resizeDownItem.target = self
         paneMenu.addItem(resizeDownItem)
 
-        let resizeLeftItem = NSMenuItem(title: "Resize Left", action: #selector(resizeLeft(_:)), keyEquivalent: String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!)))
+        let resizeLeftItem = NSMenuItem(
+            title: "Resize Left", action: #selector(resizeLeft(_:)),
+            keyEquivalent: String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!)))
         resizeLeftItem.keyEquivalentModifierMask = [.control, .option]
         resizeLeftItem.target = self
         paneMenu.addItem(resizeLeftItem)
 
-        let resizeRightItem = NSMenuItem(title: "Resize Right", action: #selector(resizeRight(_:)), keyEquivalent: String(Character(UnicodeScalar(NSRightArrowFunctionKey)!)))
+        let resizeRightItem = NSMenuItem(
+            title: "Resize Right", action: #selector(resizeRight(_:)),
+            keyEquivalent: String(Character(UnicodeScalar(NSRightArrowFunctionKey)!)))
         resizeRightItem.keyEquivalentModifierMask = [.control, .option]
         resizeRightItem.target = self
         paneMenu.addItem(resizeRightItem)
 
         paneMenu.addItem(NSMenuItem.separator())
 
-        let zoomItem = NSMenuItem(title: "Zoom Pane", action: #selector(zoomPane(_:)), keyEquivalent: "\r")
+        let zoomItem = NSMenuItem(
+            title: "Zoom Pane", action: #selector(zoomPane(_:)), keyEquivalent: "\r")
         zoomItem.keyEquivalentModifierMask = [.command, .shift]
         zoomItem.target = self
         paneMenu.addItem(zoomItem)
 
-        let equalizeItem = NSMenuItem(title: "Equalize Panes", action: #selector(equalizePanes(_:)), keyEquivalent: "=")
+        let equalizeItem = NSMenuItem(
+            title: "Equalize Panes", action: #selector(equalizePanes(_:)), keyEquivalent: "=")
         equalizeItem.keyEquivalentModifierMask = [.command, .option]
         equalizeItem.target = self
         paneMenu.addItem(equalizeItem)
@@ -608,54 +683,77 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let viewMenuItem = NSMenuItem()
         let viewMenu = NSMenu(title: "View")
 
-        let toggleSidebarItem = NSMenuItem(title: "Toggle Sidebar", action: #selector(toggleSidebar(_:)), keyEquivalent: "b")
+        let toggleSidebarItem = NSMenuItem(
+            title: "Toggle Sidebar", action: #selector(toggleSidebar(_:)), keyEquivalent: "b")
         toggleSidebarItem.target = self
         viewMenu.addItem(toggleSidebarItem)
 
-        let toggleEditorItem = NSMenuItem(title: "Toggle Editor Sidebar", action: #selector(toggleEditorSidebar(_:)), keyEquivalent: "\\")
+        let toggleEditorItem = NSMenuItem(
+            title: "Toggle Editor Sidebar", action: #selector(toggleEditorSidebar(_:)),
+            keyEquivalent: "\\")
         toggleEditorItem.keyEquivalentModifierMask = [.command]
         toggleEditorItem.target = self
         viewMenu.addItem(toggleEditorItem)
 
-        let toggleGitPanelItem = NSMenuItem(title: "Toggle Git Panel", action: #selector(toggleGitPanel(_:)), keyEquivalent: "g")
+        let toggleGitPanelItem = NSMenuItem(
+            title: "Toggle Git Panel", action: #selector(toggleGitPanel(_:)), keyEquivalent: "g")
         toggleGitPanelItem.keyEquivalentModifierMask = [.command, .shift]
         toggleGitPanelItem.target = self
         viewMenu.addItem(toggleGitPanelItem)
 
-        let toggleRightSidebarItem = NSMenuItem(title: "Toggle Right Sidebar", action: #selector(toggleRightSidebar(_:)), keyEquivalent: "/")
+        let toggleRightSidebarItem = NSMenuItem(
+            title: "Toggle Right Sidebar", action: #selector(toggleRightSidebar(_:)),
+            keyEquivalent: "/")
         toggleRightSidebarItem.keyEquivalentModifierMask = [.command]
         toggleRightSidebarItem.target = self
         viewMenu.addItem(toggleRightSidebarItem)
 
-        let saveEditorItem = NSMenuItem(title: "Save Editor File", action: #selector(saveEditorFile(_:)), keyEquivalent: "s")
+        let toggleRunnerPanelItem = NSMenuItem(
+            title: "Toggle Runner Panel", action: #selector(toggleRunnerPanel(_:)),
+            keyEquivalent: "r")
+        toggleRunnerPanelItem.keyEquivalentModifierMask = [.command]
+        toggleRunnerPanelItem.target = self
+        viewMenu.addItem(toggleRunnerPanelItem)
+
+        let saveEditorItem = NSMenuItem(
+            title: "Save Editor File", action: #selector(saveEditorFile(_:)), keyEquivalent: "s")
         saveEditorItem.keyEquivalentModifierMask = [.command, .shift]
         saveEditorItem.target = self
         viewMenu.addItem(saveEditorItem)
 
         viewMenu.addItem(NSMenuItem.separator())
-        let increaseFontItem = NSMenuItem(title: "Increase Font Size", action: #selector(increaseFontSize(_:)), keyEquivalent: "+")
+        let increaseFontItem = NSMenuItem(
+            title: "Increase Font Size", action: #selector(increaseFontSize(_:)), keyEquivalent: "+"
+        )
         increaseFontItem.target = self
         viewMenu.addItem(increaseFontItem)
         // Hidden Cmd+= alternative so users don't need Shift for zoom in
-        let increaseFontAltItem = NSMenuItem(title: "Increase Font Size", action: #selector(increaseFontSize(_:)), keyEquivalent: "=")
+        let increaseFontAltItem = NSMenuItem(
+            title: "Increase Font Size", action: #selector(increaseFontSize(_:)), keyEquivalent: "="
+        )
         increaseFontAltItem.target = self
         increaseFontAltItem.isHidden = true
         increaseFontAltItem.allowsKeyEquivalentWhenHidden = true
         viewMenu.addItem(increaseFontAltItem)
-        let decreaseFontItem = NSMenuItem(title: "Decrease Font Size", action: #selector(decreaseFontSize(_:)), keyEquivalent: "-")
+        let decreaseFontItem = NSMenuItem(
+            title: "Decrease Font Size", action: #selector(decreaseFontSize(_:)), keyEquivalent: "-"
+        )
         decreaseFontItem.target = self
         viewMenu.addItem(decreaseFontItem)
-        let resetFontItem = NSMenuItem(title: "Reset Font Size", action: #selector(resetFontSize(_:)), keyEquivalent: "0")
+        let resetFontItem = NSMenuItem(
+            title: "Reset Font Size", action: #selector(resetFontSize(_:)), keyEquivalent: "0")
         resetFontItem.target = self
         viewMenu.addItem(resetFontItem)
 
         viewMenu.addItem(NSMenuItem.separator())
-        let commandPaletteItem = NSMenuItem(title: "Command Palette", action: #selector(showCommandPalette(_:)), keyEquivalent: "p")
+        let commandPaletteItem = NSMenuItem(
+            title: "Command Palette", action: #selector(showCommandPalette(_:)), keyEquivalent: "p")
         commandPaletteItem.target = self
         viewMenu.addItem(commandPaletteItem)
 
         viewMenu.addItem(NSMenuItem.separator())
-        let findItem = NSMenuItem(title: "Find in Terminal", action: #selector(findInTerminal(_:)), keyEquivalent: "f")
+        let findItem = NSMenuItem(
+            title: "Find in Terminal", action: #selector(findInTerminal(_:)), keyEquivalent: "f")
         findItem.target = self
         viewMenu.addItem(findItem)
 
@@ -722,92 +820,183 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func applyPaneLayoutPresetFromMenu(_ sender: NSMenuItem) {
         guard let rawValue = sender.representedObject as? String,
-              let preset = PaneLayoutPreset(rawValue: rawValue) else { return }
+            let preset = PaneLayoutPreset(rawValue: rawValue)
+        else { return }
         applyPaneLayoutPreset(preset)
     }
 
     @objc private func showCommandPalette(_ sender: Any?) {
         guard let window = windowController.window else { return }
         let palette = CommandPaletteController.shared
-        if palette.isVisible { palette.dismiss(); return }
-
-        palette.commands = [
-            PaletteCommand(category: "Tabs", name: "New Tab", shortcut: "Cmd+T", icon: "plus.square") { [weak self] in self?.newTab(nil) },
-            PaletteCommand(category: "Tabs", name: "Close Tab", shortcut: "Cmd+W", icon: "xmark.square") { [weak self] in self?.closeTab(nil) },
-            PaletteCommand(category: "Tabs", name: "Next Tab", shortcut: "Cmd+Shift+]", icon: "arrow.right.square") { [weak self] in self?.nextTab(nil) },
-            PaletteCommand(category: "Tabs", name: "Previous Tab", shortcut: "Cmd+Shift+[", icon: "arrow.left.square") { [weak self] in self?.previousTab(nil) },
-            PaletteCommand(category: "Sessions", name: "New Session", shortcut: "Cmd+Shift+T", icon: "terminal") { [weak self] in self?.newSession(nil) },
-            PaletteCommand(category: "Sessions", name: "Close Session", shortcut: "Cmd+Shift+W", icon: "xmark.circle") { [weak self] in self?.closeSession(nil) },
-            PaletteCommand(category: "Sessions", name: "Rename Session", shortcut: "Cmd+Shift+N", icon: "pencil") { [weak self] in self?.renameSession(nil) },
-            PaletteCommand(category: "Sessions", name: "Next Session", shortcut: "", icon: "arrow.right") { [weak self] in self?.nextSession(nil) },
-            PaletteCommand(category: "Sessions", name: "Previous Session", shortcut: "", icon: "arrow.left") { [weak self] in self?.previousSession(nil) },
-            PaletteCommand(category: "Panes", name: "Split Vertical", shortcut: "Cmd+D", icon: "rectangle.split.1x2") { [weak self] in self?.splitVertical(nil) },
-            PaletteCommand(category: "Panes", name: "Split Horizontal", shortcut: "Cmd+Shift+D", icon: "rectangle.split.2x1") { [weak self] in self?.splitHorizontal(nil) },
-        ] + PaneLayoutPreset.allCases.map { [weak self] preset in
-            PaletteCommand(
-                category: "Layouts",
-                name: preset.menuTitle,
-                shortcut: preset.shortcutLabel,
-                icon: preset.icon
-            ) {
-                self?.applyPaneLayoutPreset(preset)
-            }
-        } + [
-            PaletteCommand(category: "Panes", name: "Zoom Pane", shortcut: "Cmd+Shift+Enter", icon: "arrow.up.left.and.arrow.down.right") { [weak self] in self?.zoomPane(nil) },
-            PaletteCommand(category: "Panes", name: "Equalize Panes", shortcut: "Cmd+Opt+=", icon: "equal.square") { [weak self] in self?.equalizePanes(nil) },
-            PaletteCommand(category: "Navigation", name: "Navigate Up", shortcut: "Cmd+Shift+Up", icon: "arrow.up") { [weak self] in self?.navigateUp(nil) },
-            PaletteCommand(category: "Navigation", name: "Navigate Down", shortcut: "Cmd+Shift+Down", icon: "arrow.down") { [weak self] in self?.navigateDown(nil) },
-            PaletteCommand(category: "Navigation", name: "Navigate Left", shortcut: "Cmd+Shift+Left", icon: "arrow.left") { [weak self] in self?.navigateLeft(nil) },
-            PaletteCommand(category: "Navigation", name: "Navigate Right", shortcut: "Cmd+Shift+Right", icon: "arrow.right") { [weak self] in self?.navigateRight(nil) },
-            PaletteCommand(category: "View", name: "Toggle Sidebar", shortcut: "Cmd+B", icon: "sidebar.left") { [weak self] in self?.toggleSidebar(nil) },
-            PaletteCommand(category: "View", name: "Toggle Editor Sidebar", shortcut: "Cmd+\\", icon: "sidebar.right") { [weak self] in self?.toggleEditorSidebar(nil) },
-            PaletteCommand(category: "View", name: "Toggle Git Panel", shortcut: "Cmd+Shift+G", icon: "arrow.triangle.branch") { [weak self] in self?.toggleGitPanel(nil) },
-            PaletteCommand(category: "View", name: "Toggle Right Sidebar", shortcut: "Cmd+/", icon: "sidebar.right") { [weak self] in self?.toggleRightSidebar(nil) },
-            PaletteCommand(category: "View", name: "Increase Font Size", shortcut: "Cmd++", icon: "plus.magnifyingglass") { [weak self] in self?.increaseFontSize(nil) },
-            PaletteCommand(category: "View", name: "Decrease Font Size", shortcut: "Cmd+-", icon: "minus.magnifyingglass") { [weak self] in self?.decreaseFontSize(nil) },
-            PaletteCommand(category: "View", name: "Reset Font Size", shortcut: "Cmd+0", icon: "1.magnifyingglass") { [weak self] in self?.resetFontSize(nil) },
-            PaletteCommand(category: "Search", name: "Find in Terminal", shortcut: "Cmd+F", icon: "magnifyingglass") { [weak self] in self?.findInTerminal(nil) },
-        ] + [
-            PaletteCommand(
-                category: "Theme",
-                name: "Toggle Dark/Light Mode",
-                shortcut: "",
-                icon: ThemeManager.shared.current.isLight ? "moon" : "sun.max"
-            ) { [weak self] in
-                self?.toggleAppearance(nil)
-            },
-            PaletteCommand(
-                category: "Theme",
-                name: "Toggle Glassmorphism",
-                shortcut: "",
-                icon: ThemeManager.shared.glassmorphismEnabled ? "checkmark.circle.fill" : "circle"
-            ) { [weak self] in
-                self?.toggleGlassmorphism(nil)
-            },
-        ] + ThemeManager.shared.available.filter({ !$0.isLight }).map { [weak self] theme in
-            let isCurrent = ThemeManager.shared.current.familyName == theme.familyName
-            return PaletteCommand(category: "Theme", name: "Theme: \(theme.name)", shortcut: "", icon: isCurrent ? "checkmark.circle.fill" : "paintpalette") {
-                // Apply the dark or light variant depending on current appearance preference
-                let target = ThemeManager.shared.current.isLight ? (theme.companion ?? theme) : theme
-                self?.applyThemeAndUpdateMenu(target)
-            }
-        } + StatusBarConfig.shared.registeredSegments.map { info in
-            let enabled = StatusBarConfig.shared.isEnabled(info.id)
-            return PaletteCommand(
-                category: "Status Bar",
-                name: "Status Bar: \(info.label)",
-                shortcut: "",
-                icon: enabled ? "checkmark.circle.fill" : "circle"
-            ) {
-                StatusBarConfig.shared.toggle(info.id)
-            }
+        if palette.isVisible {
+            palette.dismiss()
+            return
         }
+
+        palette.commands =
+            [
+                PaletteCommand(
+                    category: "Tabs", name: "New Tab", shortcut: "Cmd+T", icon: "plus.square"
+                ) { [weak self] in self?.newTab(nil) },
+                PaletteCommand(
+                    category: "Tabs", name: "Close Tab", shortcut: "Cmd+W", icon: "xmark.square"
+                ) { [weak self] in self?.closeTab(nil) },
+                PaletteCommand(
+                    category: "Tabs", name: "Next Tab", shortcut: "Cmd+Shift+]",
+                    icon: "arrow.right.square"
+                ) { [weak self] in self?.nextTab(nil) },
+                PaletteCommand(
+                    category: "Tabs", name: "Previous Tab", shortcut: "Cmd+Shift+[",
+                    icon: "arrow.left.square"
+                ) { [weak self] in self?.previousTab(nil) },
+                PaletteCommand(
+                    category: "Project", name: "New Project Session", shortcut: "Cmd+Shift+T",
+                    icon: "terminal"
+                ) { [weak self] in self?.newSession(nil) },
+                PaletteCommand(
+                    category: "Project", name: "Close Project Session", shortcut: "Cmd+Shift+W",
+                    icon: "xmark.circle"
+                ) { [weak self] in self?.closeSession(nil) },
+                PaletteCommand(
+                    category: "Project", name: "Rename Project Session", shortcut: "Cmd+Shift+N",
+                    icon: "pencil"
+                ) { [weak self] in self?.renameSession(nil) },
+                PaletteCommand(
+                    category: "Project", name: "Next Project", shortcut: "",
+                    icon: "arrow.right"
+                ) { [weak self] in self?.nextSession(nil) },
+                PaletteCommand(
+                    category: "Project", name: "Previous Project", shortcut: "",
+                    icon: "arrow.left"
+                ) { [weak self] in self?.previousSession(nil) },
+                PaletteCommand(
+                    category: "Panes", name: "Split Vertical", shortcut: "Cmd+D",
+                    icon: "rectangle.split.1x2"
+                ) { [weak self] in self?.splitVertical(nil) },
+                PaletteCommand(
+                    category: "Panes", name: "Split Horizontal", shortcut: "Cmd+Shift+D",
+                    icon: "rectangle.split.2x1"
+                ) { [weak self] in self?.splitHorizontal(nil) },
+            ]
+            + PaneLayoutPreset.allCases.map { [weak self] preset in
+                PaletteCommand(
+                    category: "Layouts",
+                    name: preset.menuTitle,
+                    shortcut: preset.shortcutLabel,
+                    icon: preset.icon
+                ) {
+                    self?.applyPaneLayoutPreset(preset)
+                }
+            } + [
+                PaletteCommand(
+                    category: "Panes", name: "Zoom Pane", shortcut: "Cmd+Shift+Enter",
+                    icon: "arrow.up.left.and.arrow.down.right"
+                ) { [weak self] in self?.zoomPane(nil) },
+                PaletteCommand(
+                    category: "Panes", name: "Equalize Panes", shortcut: "Cmd+Opt+=",
+                    icon: "equal.square"
+                ) { [weak self] in self?.equalizePanes(nil) },
+                PaletteCommand(
+                    category: "Navigation", name: "Navigate Up", shortcut: "Cmd+Shift+Up",
+                    icon: "arrow.up"
+                ) { [weak self] in self?.navigateUp(nil) },
+                PaletteCommand(
+                    category: "Navigation", name: "Navigate Down", shortcut: "Cmd+Shift+Down",
+                    icon: "arrow.down"
+                ) { [weak self] in self?.navigateDown(nil) },
+                PaletteCommand(
+                    category: "Navigation", name: "Navigate Left", shortcut: "Cmd+Shift+Left",
+                    icon: "arrow.left"
+                ) { [weak self] in self?.navigateLeft(nil) },
+                PaletteCommand(
+                    category: "Navigation", name: "Navigate Right", shortcut: "Cmd+Shift+Right",
+                    icon: "arrow.right"
+                ) { [weak self] in self?.navigateRight(nil) },
+                PaletteCommand(
+                    category: "View", name: "Toggle Sidebar", shortcut: "Cmd+B",
+                    icon: "sidebar.left"
+                ) { [weak self] in self?.toggleSidebar(nil) },
+                PaletteCommand(
+                    category: "View", name: "Toggle Editor Sidebar", shortcut: "Cmd+\\",
+                    icon: "sidebar.right"
+                ) { [weak self] in self?.toggleEditorSidebar(nil) },
+                PaletteCommand(
+                    category: "View", name: "Toggle Git Panel", shortcut: "Cmd+Shift+G",
+                    icon: "arrow.triangle.branch"
+                ) { [weak self] in self?.toggleGitPanel(nil) },
+                PaletteCommand(
+                    category: "View", name: "Toggle Right Sidebar", shortcut: "Cmd+/",
+                    icon: "sidebar.right"
+                ) { [weak self] in self?.toggleRightSidebar(nil) },
+                PaletteCommand(
+                    category: "View", name: "Toggle Runner Panel", shortcut: "Cmd+R",
+                    icon: "play.rectangle"
+                ) { [weak self] in self?.toggleRunnerPanel(nil) },
+                PaletteCommand(
+                    category: "View", name: "Increase Font Size", shortcut: "Cmd++",
+                    icon: "plus.magnifyingglass"
+                ) { [weak self] in self?.increaseFontSize(nil) },
+                PaletteCommand(
+                    category: "View", name: "Decrease Font Size", shortcut: "Cmd+-",
+                    icon: "minus.magnifyingglass"
+                ) { [weak self] in self?.decreaseFontSize(nil) },
+                PaletteCommand(
+                    category: "View", name: "Reset Font Size", shortcut: "Cmd+0",
+                    icon: "1.magnifyingglass"
+                ) { [weak self] in self?.resetFontSize(nil) },
+                PaletteCommand(
+                    category: "Search", name: "Find in Terminal", shortcut: "Cmd+F",
+                    icon: "magnifyingglass"
+                ) { [weak self] in self?.findInTerminal(nil) },
+            ] + [
+                PaletteCommand(
+                    category: "Theme",
+                    name: "Toggle Dark/Light Mode",
+                    shortcut: "",
+                    icon: ThemeManager.shared.current.isLight ? "moon" : "sun.max"
+                ) { [weak self] in
+                    self?.toggleAppearance(nil)
+                },
+                PaletteCommand(
+                    category: "Theme",
+                    name: "Toggle Glassmorphism",
+                    shortcut: "",
+                    icon: ThemeManager.shared.glassmorphismEnabled
+                        ? "checkmark.circle.fill" : "circle"
+                ) { [weak self] in
+                    self?.toggleGlassmorphism(nil)
+                },
+            ]
+            + ThemeManager.shared.available.filter({ !$0.isLight }).map { [weak self] theme in
+                let isCurrent = ThemeManager.shared.current.familyName == theme.familyName
+                return PaletteCommand(
+                    category: "Theme", name: "Theme: \(theme.name)", shortcut: "",
+                    icon: isCurrent ? "checkmark.circle.fill" : "paintpalette"
+                ) {
+                    // Apply the dark or light variant depending on current appearance preference
+                    let target =
+                        ThemeManager.shared.current.isLight ? (theme.companion ?? theme) : theme
+                    self?.applyThemeAndUpdateMenu(target)
+                }
+            }
+            + StatusBarConfig.shared.registeredSegments.map { info in
+                let enabled = StatusBarConfig.shared.isEnabled(info.id)
+                return PaletteCommand(
+                    category: "Status Bar",
+                    name: "Status Bar: \(info.label)",
+                    shortcut: "",
+                    icon: enabled ? "checkmark.circle.fill" : "circle"
+                ) {
+                    StatusBarConfig.shared.toggle(info.id)
+                }
+            }
         palette.show(in: window)
     }
 
     @objc private func switchTheme(_ sender: NSMenuItem) {
         guard let themeID = sender.representedObject as? String,
-              let theme = ThemeManager.shared.available.first(where: { $0.id == themeID }) else { return }
+            let theme = ThemeManager.shared.available.first(where: { $0.id == themeID })
+        else { return }
         applyThemeAndUpdateMenu(theme)
     }
 
@@ -819,7 +1008,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         for menuItem in mainMenu.items {
             guard menuItem.submenu?.title == "Theme" else { continue }
             for item in menuItem.submenu?.items ?? [] {
-                item.state = (item.representedObject as? String) == ThemeManager.shared.current.id ? .on : .off
+                item.state =
+                    (item.representedObject as? String) == ThemeManager.shared.current.id
+                    ? .on : .off
             }
         }
     }
@@ -860,16 +1051,29 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(sender)
     }
 
-    // MARK: - Session Actions
+    // MARK: - Project Session Actions
+
+    /// Sessions visible in the current project scope (or all unscoped if no project active).
+    private var projectScopedSessions: [Session] {
+        if let project = windowController.projectManager.activeProject {
+            return sessionManager.sessions.filter { $0.projectID == project.id }
+        }
+        return sessionManager.sessions.filter { $0.projectID == nil }
+    }
 
     @objc private func newSession(_ sender: Any?) {
-        let session = sessionManager.createSession()
+        let session = sessionManager.createSession(
+            projectID: windowController.projectManager.activeProject?.id)
         windowController.displaySession(session)
+        windowController.sidebarView.reloadSessions()
         sessionManager.save()
     }
 
     @objc private func closeSession(_ sender: Any?) {
         guard let session = sessionManager.activeSession else { return }
+        let scoped = projectScopedSessions
+        // Must keep at least one session in this scope
+        guard scoped.count > 1 else { return }
 
         let paneIDs = session.splitTree.allPaneIDs()
         for paneID in paneIDs {
@@ -885,13 +1089,14 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             NSApp.terminate(nil)
         }
+        windowController.sidebarView.reloadSessions()
     }
 
     @objc private func renameSession(_ sender: Any?) {
         guard let session = sessionManager.activeSession else { return }
 
         let alert = NSAlert()
-        alert.messageText = "Rename Session"
+        alert.messageText = "Rename Project Session"
         alert.informativeText = "Enter a new name:"
         alert.addButton(withTitle: "Rename")
         alert.addButton(withTitle: "Cancel")
@@ -905,85 +1110,93 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             let newName = textField.stringValue.trimmingCharacters(in: .whitespaces)
             if !newName.isEmpty {
                 sessionManager.renameSession(id: session.id, name: newName)
+                windowController.sidebarView.reloadSessions()
                 sessionManager.save()
             }
         }
     }
 
     @objc private func nextSession(_ sender: Any?) {
-        sessionManager.nextSession()
-        if let session = sessionManager.activeSession {
-            windowController.displaySession(session)
-        }
-        sessionManager.save()
+        let projects = windowController.projectManager.projects
+        guard !projects.isEmpty else { return }
+        let current = windowController.projectManager.activeProjectIndex
+        let next = (current + 1) % projects.count
+        windowController.sidebarView.reloadProjects()
+        windowController.sidebarDidSelectProject(projects[next])
     }
 
     @objc private func previousSession(_ sender: Any?) {
-        sessionManager.previousSession()
-        if let session = sessionManager.activeSession {
-            windowController.displaySession(session)
-        }
-        sessionManager.save()
+        let projects = windowController.projectManager.projects
+        guard !projects.isEmpty else { return }
+        let current = windowController.projectManager.activeProjectIndex
+        let prev = (current - 1 + projects.count) % projects.count
+        windowController.sidebarView.reloadProjects()
+        windowController.sidebarDidSelectProject(projects[prev])
     }
 
     @objc private func switchToSessionByNumber(_ sender: NSMenuItem) {
         let index = sender.tag - 1
-        guard index >= 0, index < sessionManager.sessions.count else { return }
-        sessionManager.switchToSession(at: index)
-        if let session = sessionManager.activeSession {
-            windowController.displaySession(session)
-        }
-        sessionManager.save()
+        let projects = windowController.projectManager.projects
+        guard index >= 0, index < projects.count else { return }
+        windowController.sidebarDidSelectProject(projects[index])
+        windowController.sidebarView.reloadProjects()
     }
 
     // MARK: - Tab Actions
 
     @objc private func newTab(_ sender: Any?) {
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID,
-              let pane = windowController.splitContainerView.pane(for: focusedID) else { return }
+            let focusedID = session.focusedPaneID,
+            let pane = windowController.splitContainerView.pane(for: focusedID)
+        else { return }
         pane.addNewTab()
     }
 
     @objc private func closeTab(_ sender: Any?) {
         if windowController.isEditorSidebarVisible,
-           windowController.editorSidebarView.hasOpenTabs,
-           windowController.editorSidebarView.handlesTabShortcuts(in: windowController.window) {
+            windowController.editorSidebarView.hasOpenTabs,
+            windowController.editorSidebarView.handlesTabShortcuts(in: windowController.window)
+        {
             windowController.editorSidebarView.closeCurrentTab()
             return
         }
 
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID,
-              let pane = windowController.splitContainerView.pane(for: focusedID) else { return }
+            let focusedID = session.focusedPaneID,
+            let pane = windowController.splitContainerView.pane(for: focusedID)
+        else { return }
         pane.closeActiveTab()
     }
 
     @objc private func nextTab(_ sender: Any?) {
         if windowController.isEditorSidebarVisible,
-           windowController.editorSidebarView.hasOpenTabs,
-           windowController.editorSidebarView.handlesTabShortcuts(in: windowController.window) {
+            windowController.editorSidebarView.hasOpenTabs,
+            windowController.editorSidebarView.handlesTabShortcuts(in: windowController.window)
+        {
             windowController.editorSidebarView.selectNextTab()
             return
         }
 
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID,
-              let pane = windowController.splitContainerView.pane(for: focusedID) else { return }
+            let focusedID = session.focusedPaneID,
+            let pane = windowController.splitContainerView.pane(for: focusedID)
+        else { return }
         pane.selectNextTab()
     }
 
     @objc private func previousTab(_ sender: Any?) {
         if windowController.isEditorSidebarVisible,
-           windowController.editorSidebarView.hasOpenTabs,
-           windowController.editorSidebarView.handlesTabShortcuts(in: windowController.window) {
+            windowController.editorSidebarView.hasOpenTabs,
+            windowController.editorSidebarView.handlesTabShortcuts(in: windowController.window)
+        {
             windowController.editorSidebarView.selectPreviousTab()
             return
         }
 
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID,
-              let pane = windowController.splitContainerView.pane(for: focusedID) else { return }
+            let focusedID = session.focusedPaneID,
+            let pane = windowController.splitContainerView.pane(for: focusedID)
+        else { return }
         pane.selectPreviousTab()
     }
 
@@ -991,7 +1204,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func splitVertical(_ sender: Any?) {
         guard let session = sessionManager.activeSession else { return }
-        if let _ = session.splitFocusedPane(direction: .vertical) {
+        if session.splitFocusedPane(direction: .vertical) != nil {
             windowController.displaySession(session)
             sessionManager.save()
         }
@@ -999,7 +1212,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func splitHorizontal(_ sender: Any?) {
         guard let session = sessionManager.activeSession else { return }
-        if let _ = session.splitFocusedPane(direction: .horizontal) {
+        if session.splitFocusedPane(direction: .horizontal) != nil {
             windowController.displaySession(session)
             sessionManager.save()
         }
@@ -1091,6 +1304,10 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         windowController.toggleRightSidebar()
     }
 
+    @objc private func toggleRunnerPanel(_ sender: Any?) {
+        windowController.toggleRightSidebar(showingMode: .runner)
+    }
+
     @objc private func saveEditorFile(_ sender: Any?) {
         guard windowController.isEditorSidebarVisible else { return }
         windowController.editorSidebarView.saveActiveTab()
@@ -1098,26 +1315,30 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func findInTerminal(_ sender: Any?) {
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID,
-              let pane = windowController.splitContainerView.pane(for: focusedID) else { return }
+            let focusedID = session.focusedPaneID,
+            let pane = windowController.splitContainerView.pane(for: focusedID)
+        else { return }
         pane.toggleSearch()
     }
 
     @objc private func increaseFontSize(_ sender: Any?) {
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID else { return }
+            let focusedID = session.focusedPaneID
+        else { return }
         windowController.splitContainerView.pane(for: focusedID)?.increaseFontSize()
     }
 
     @objc private func decreaseFontSize(_ sender: Any?) {
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID else { return }
+            let focusedID = session.focusedPaneID
+        else { return }
         windowController.splitContainerView.pane(for: focusedID)?.decreaseFontSize()
     }
 
     @objc private func resetFontSize(_ sender: Any?) {
         guard let session = sessionManager.activeSession,
-              let focusedID = session.focusedPaneID else { return }
+            let focusedID = session.focusedPaneID
+        else { return }
         windowController.splitContainerView.pane(for: focusedID)?.resetFontSize()
     }
 }
@@ -1135,6 +1356,11 @@ extension AppDelegate: SplitContainerViewDelegate {
         let cwd = pane.queryShellCwd()
         windowController.updateSidebarFileTree(path: cwd)
         windowController.updateSidebarGitViews(cwd: cwd)
+        // Click-to-focus across panes in different worktrees must also
+        // rebind the Runner tab; without this it stays on the previously
+        // focused pane's worktree. (displaySession + session-sidebar paths
+        // already call this; the intra-session focus path did not.)
+        windowController.rebindRunnerWorktree()
     }
 
     func splitContainerView(_ view: SplitContainerView, paneProcessTerminated pane: TerminalPane) {
@@ -1164,24 +1390,32 @@ extension AppDelegate: SplitContainerViewDelegate {
 // MARK: - GhosttyAppDelegate
 
 extension AppDelegate: GhosttyAppDelegate {
-    func ghosttyApp(_ app: GhosttyApp, closeSurface surfaceView: GhosttyTerminalView, processAlive: Bool) {
+    func ghosttyApp(
+        _ app: GhosttyApp, closeSurface surfaceView: GhosttyTerminalView, processAlive: Bool
+    ) {
         guard let pane = findPane(for: surfaceView) else { return }
         pane.closeTab(for: surfaceView)
     }
 
-    func ghosttyApp(_ app: GhosttyApp, surfaceDidSetTitle surfaceView: GhosttyTerminalView, title: String) {
+    func ghosttyApp(
+        _ app: GhosttyApp, surfaceDidSetTitle surfaceView: GhosttyTerminalView, title: String
+    ) {
         guard let pane = findPane(for: surfaceView) else { return }
         pane.setTitle(title, for: surfaceView)
     }
 
-    func ghosttyApp(_ app: GhosttyApp, surfaceDidSetPwd surfaceView: GhosttyTerminalView, pwd: String) {
+    func ghosttyApp(
+        _ app: GhosttyApp, surfaceDidSetPwd surfaceView: GhosttyTerminalView, pwd: String
+    ) {
         guard let pane = findPane(for: surfaceView) else { return }
         pane.setPwd(pwd, for: surfaceView)
 
         if let session = sessionManager.activeSession,
-           session.focusedPaneID == pane.paneID {
+            session.focusedPaneID == pane.paneID
+        {
             windowController.updateSidebarFileTree(path: pwd)
             windowController.updateSidebarGitViews(cwd: pwd)
+            windowController.rebindRunnerWorktree()
             windowController.globalStatusBar.updateFromPane(
                 cwd: pwd,
                 shellPid: pane.shellProcessID
@@ -1189,16 +1423,24 @@ extension AppDelegate: GhosttyAppDelegate {
         }
     }
 
-    func ghosttyApp(_ app: GhosttyApp, surfaceDidRequestSplit surfaceView: GhosttyTerminalView, direction: ghostty_action_split_direction_e) {
+    func ghosttyApp(
+        _ app: GhosttyApp, surfaceDidRequestSplit surfaceView: GhosttyTerminalView,
+        direction: ghostty_action_split_direction_e
+    ) {
         guard let session = sessionManager.activeSession else { return }
-        let splitDir: SplitDirection = (direction == GHOSTTY_SPLIT_DIRECTION_RIGHT || direction == GHOSTTY_SPLIT_DIRECTION_LEFT) ? .vertical : .horizontal
-        if let _ = session.splitFocusedPane(direction: splitDir) {
+        let splitDir: SplitDirection =
+            (direction == GHOSTTY_SPLIT_DIRECTION_RIGHT
+                || direction == GHOSTTY_SPLIT_DIRECTION_LEFT) ? .vertical : .horizontal
+        if session.splitFocusedPane(direction: splitDir) != nil {
             windowController.displaySession(session)
             sessionManager.save()
         }
     }
 
-    func ghosttyApp(_ app: GhosttyApp, surfaceDidSetCellSize surfaceView: GhosttyTerminalView, width: UInt32, height: UInt32) {
+    func ghosttyApp(
+        _ app: GhosttyApp, surfaceDidSetCellSize surfaceView: GhosttyTerminalView, width: UInt32,
+        height: UInt32
+    ) {
         // Could be used for step-resize in the future
     }
 
@@ -1208,7 +1450,10 @@ extension AppDelegate: GhosttyAppDelegate {
         surfaceView.needsDisplay = true
     }
 
-    func ghosttyApp(_ app: GhosttyApp, surfaceDidSetMouseShape surfaceView: GhosttyTerminalView, shape: ghostty_action_mouse_shape_e) {
+    func ghosttyApp(
+        _ app: GhosttyApp, surfaceDidSetMouseShape surfaceView: GhosttyTerminalView,
+        shape: ghostty_action_mouse_shape_e
+    ) {
         let cursor: NSCursor
         switch shape {
         case GHOSTTY_MOUSE_SHAPE_DEFAULT:
@@ -1232,7 +1477,10 @@ extension AppDelegate: GhosttyAppDelegate {
         cursor.set()
     }
 
-    func ghosttyApp(_ app: GhosttyApp, surfaceCommandFinished surfaceView: GhosttyTerminalView, exitCode: Int, durationNanos: UInt64) {
+    func ghosttyApp(
+        _ app: GhosttyApp, surfaceCommandFinished surfaceView: GhosttyTerminalView, exitCode: Int,
+        durationNanos: UInt64
+    ) {
         guard let pane = findPane(for: surfaceView) else { return }
 
         // Update session status indicator -- match by focusedPaneID or any pane in the split tree
@@ -1256,8 +1504,9 @@ extension AppDelegate: GhosttyAppDelegate {
 
         // Only notify if the pane is NOT focused (background command)
         if let session = sessionManager.activeSession,
-           session.focusedPaneID == pane.paneID,
-           NSApp.isActive {
+            session.focusedPaneID == pane.paneID,
+            NSApp.isActive
+        {
             return
         }
 
@@ -1274,21 +1523,29 @@ extension AppDelegate: GhosttyAppDelegate {
         content.title = "Command Finished"
         content.body = body
         content.sound = .default
-        let request = UNNotificationRequest(identifier: UUID().uuidString, content: content, trigger: nil)
+        let request = UNNotificationRequest(
+            identifier: UUID().uuidString, content: content, trigger: nil)
         UNUserNotificationCenter.current().add(request)
     }
 
-    func ghosttyApp(_ app: GhosttyApp, surfaceDidRequestSearch surfaceView: GhosttyTerminalView, needle: String?) {
+    func ghosttyApp(
+        _ app: GhosttyApp, surfaceDidRequestSearch surfaceView: GhosttyTerminalView, needle: String?
+    ) {
         guard let pane = findPane(for: surfaceView) else { return }
         pane.showSearchWithNeedle(needle)
     }
 
-    func ghosttyApp(_ app: GhosttyApp, surfaceDidSetSearchTotal surfaceView: GhosttyTerminalView, total: Int) {
+    func ghosttyApp(
+        _ app: GhosttyApp, surfaceDidSetSearchTotal surfaceView: GhosttyTerminalView, total: Int
+    ) {
         guard let pane = findPane(for: surfaceView) else { return }
         pane.updateSearchTotal(total)
     }
 
-    func ghosttyApp(_ app: GhosttyApp, surfaceDidSetSearchSelected surfaceView: GhosttyTerminalView, selected: Int) {
+    func ghosttyApp(
+        _ app: GhosttyApp, surfaceDidSetSearchSelected surfaceView: GhosttyTerminalView,
+        selected: Int
+    ) {
         guard let pane = findPane(for: surfaceView) else { return }
         pane.updateSearchSelected(selected)
     }

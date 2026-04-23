@@ -79,5 +79,10 @@ let package = Package(
                 .linkedFramework("Carbon"),
             ]
         ),
+        .testTarget(
+            name: "amuxTests",
+            dependencies: ["amux"],
+            path: "Tests/amuxTests"
+        ),
     ]
 )

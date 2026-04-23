@@ -1,19 +1,29 @@
 import AppKit
 
 protocol SidebarViewDelegate: AnyObject {
+    // Sessions (called from within projects panel)
     func sidebarDidSelectSession(_ session: Session)
     func sidebarDidRequestNewSession()
     func sidebarDidRequestDeleteSession(_ session: Session)
     func sidebarDidRequestRenameSession(_ session: Session)
+    // Current directory
     func sidebarCurrentDirectory() -> String?
+    // File tree
     func sidebarDidSelectFile(path: String)
+    // Agents
     func sidebarDidRequestFocusAgentPane(paneID: UUID, tabID: UUID?, sessionID: UUID)
     func sidebarDidRequestSendInterrupt(agent: AgentInstance)
     func sidebarDidRequestKillAgent(agent: AgentInstance)
+    // Projects
+    func sidebarDidSelectProject(_ project: Project)
+    func sidebarDidRequestAddProject()
+    func sidebarDidRequestDeleteProject(_ project: Project)
+    func sidebarDidRequestRenameProject(_ project: Project)
+    func sidebarDidRequestOpenProjectFolder(_ project: Project)
 }
 
 enum SidebarMode {
-    case sessions
+    case projects
     case agents
     case fileTree
 }
@@ -22,9 +32,6 @@ class SidebarView: NSView {
     weak var delegate: SidebarViewDelegate?
     private var sessionManager: SessionManager!
 
-    private var scrollView: NSScrollView!
-    private var tableView: NSTableView!
-    private var headerLabel: NSTextField!
     private var separatorLine: NSView!
 
     // Glass background (vibrancy)
@@ -32,12 +39,11 @@ class SidebarView: NSView {
 
     // Icon tab bar
     private var iconBar: NSView!
-    private var sessionsButton: DimIconButton!
-    private var fileTreeButton: DimIconButton!
     private var iconBarSeparator: NSView!
 
     // File tree
     private var fileTreeView: FileTreeView!
+    private var fileTreeButton: DimIconButton!
 
     // Agents
     private var agentsButton: DimIconButton!
@@ -45,14 +51,18 @@ class SidebarView: NSView {
     private var agentsBadge: NSView!
     private var agentManager: AgentManager!
 
-    private(set) var mode: SidebarMode = .sessions
+    // Projects
+    private var projectsButton: DimIconButton!
+    private var projectListView: ProjectListView!
+    private var projectManager: ProjectManager!
 
-    private static let rowHeight: CGFloat = 34
-    private static let sessionCellID = NSUserInterfaceItemIdentifier("SessionCell")
+    private(set) var mode: SidebarMode = .projects
 
-    init(sessionManager: SessionManager, agentManager: AgentManager) {
+    init(sessionManager: SessionManager, agentManager: AgentManager, projectManager: ProjectManager)
+    {
         self.sessionManager = sessionManager
         self.agentManager = agentManager
+        self.projectManager = projectManager
         super.init(frame: .zero)
         setupUI()
         NotificationCenter.default.addObserver(
@@ -72,12 +82,10 @@ class SidebarView: NSView {
 
     @objc private func themeDidChange() {
         applyGlassOrSolid()
-        headerLabel.textColor = Theme.tertiaryText
         separatorLine.layer?.backgroundColor = Theme.outlineVariant.cgColor
-        sessionsButton.isActiveState = mode == .sessions
-        fileTreeButton.isActiveState = mode == .fileTree
+        projectsButton.isActiveState = mode == .projects
         agentsButton.isActiveState = mode == .agents
-        tableView.reloadData()
+        fileTreeButton.isActiveState = mode == .fileTree
     }
 
     @available(*, unavailable)
@@ -126,13 +134,13 @@ class SidebarView: NSView {
         layer?.backgroundColor = Theme.sidebarBg.cgColor
 
         setupIconBar()
-        setupHeader()
-        setupTableView()
         setupFileTree()
         setupAgentListView()
+        setupProjectListView()
         setupSeparatorLine()
         setupConstraints()
         applyGlassOrSolid()
+        setMode(.projects)
     }
 
     private func setupIconBar() {
@@ -140,36 +148,45 @@ class SidebarView: NSView {
         iconBar.translatesAutoresizingMaskIntoConstraints = false
         addSubview(iconBar)
 
-        sessionsButton = makeIconBarButton(symbolName: "terminal", action: #selector(sessionsButtonClicked))
-        sessionsButton.isActiveState = true
-        iconBar.addSubview(sessionsButton)
+        projectsButton = makeIconBarButton(
+            symbolName: "square.stack.3d.up", action: #selector(projectsButtonClicked))
+        projectsButton.isActiveState = true
+        projectsButton.toolTip = "Projects"
+        iconBar.addSubview(projectsButton)
 
-        agentsButton = makeIconBarButton(symbolName: "command.square", action: #selector(agentsButtonClicked))
+        agentsButton = makeIconBarButton(
+            symbolName: "command.square", action: #selector(agentsButtonClicked))
+        agentsButton.toolTip = "Agents"
         iconBar.addSubview(agentsButton)
 
-        fileTreeButton = makeIconBarButton(symbolName: "folder", action: #selector(fileTreeButtonClicked))
+        fileTreeButton = makeIconBarButton(
+            symbolName: "folder", action: #selector(fileTreeButtonClicked))
+        fileTreeButton.toolTip = "Files"
         iconBar.addSubview(fileTreeButton)
 
         agentsBadge = NSView()
         agentsBadge.translatesAutoresizingMaskIntoConstraints = false
         agentsBadge.wantsLayer = true
-        agentsBadge.layer?.backgroundColor = NSColor(srgbRed: 0.878, green: 0.424, blue: 0.459, alpha: 1.0).cgColor
+        agentsBadge.layer?.backgroundColor =
+            NSColor(srgbRed: 0.878, green: 0.424, blue: 0.459, alpha: 1.0).cgColor
         agentsBadge.layer?.cornerRadius = 4
         agentsBadge.isHidden = true
         iconBar.addSubview(agentsBadge)
 
         NSLayoutConstraint.activate([
-            sessionsButton.leadingAnchor.constraint(equalTo: iconBar.leadingAnchor, constant: 14),
-            sessionsButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
-            sessionsButton.widthAnchor.constraint(equalToConstant: 24),
-            sessionsButton.heightAnchor.constraint(equalToConstant: 24),
+            projectsButton.leadingAnchor.constraint(equalTo: iconBar.leadingAnchor, constant: 14),
+            projectsButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
+            projectsButton.widthAnchor.constraint(equalToConstant: 24),
+            projectsButton.heightAnchor.constraint(equalToConstant: 24),
 
-            agentsButton.leadingAnchor.constraint(equalTo: sessionsButton.trailingAnchor, constant: 6),
+            agentsButton.leadingAnchor.constraint(
+                equalTo: projectsButton.trailingAnchor, constant: 6),
             agentsButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
             agentsButton.widthAnchor.constraint(equalToConstant: 24),
             agentsButton.heightAnchor.constraint(equalToConstant: 24),
 
-            fileTreeButton.leadingAnchor.constraint(equalTo: agentsButton.trailingAnchor, constant: 6),
+            fileTreeButton.leadingAnchor.constraint(
+                equalTo: agentsButton.trailingAnchor, constant: 6),
             fileTreeButton.centerYAnchor.constraint(equalTo: iconBar.centerYAnchor),
             fileTreeButton.widthAnchor.constraint(equalToConstant: 24),
             fileTreeButton.heightAnchor.constraint(equalToConstant: 24),
@@ -177,7 +194,8 @@ class SidebarView: NSView {
             agentsBadge.widthAnchor.constraint(equalToConstant: 8),
             agentsBadge.heightAnchor.constraint(equalToConstant: 8),
             agentsBadge.topAnchor.constraint(equalTo: agentsButton.topAnchor, constant: -1),
-            agentsBadge.trailingAnchor.constraint(equalTo: agentsButton.trailingAnchor, constant: 3),
+            agentsBadge.trailingAnchor.constraint(
+                equalTo: agentsButton.trailingAnchor, constant: 3),
         ])
 
         iconBarSeparator = NSView()
@@ -215,66 +233,22 @@ class SidebarView: NSView {
     }
 
     private func setupAgentListView() {
-        agentListView = AgentListView(agentManager: agentManager, sessionManager: sessionManager)
+        agentListView = AgentListView(
+            agentManager: agentManager, sessionManager: sessionManager,
+            projectManager: projectManager)
         agentListView.translatesAutoresizingMaskIntoConstraints = false
         agentListView.isHidden = true
         agentListView.delegate = self
         addSubview(agentListView)
     }
 
-    private func setupHeader() {
-        headerLabel = NSTextField(labelWithString: "")
-        headerLabel.translatesAutoresizingMaskIntoConstraints = false
-        headerLabel.backgroundColor = .clear
-        headerLabel.isBezeled = false
-        headerLabel.isEditable = false
-        headerLabel.isSelectable = false
-        headerLabel.font = Theme.Fonts.label(size: 11)
-        headerLabel.textColor = Theme.tertiaryText
-        headerLabel.stringValue = "SESSIONS"
-        addSubview(headerLabel)
-    }
-
-    private func setupTableView() {
-        tableView = NSTableView()
-        tableView.translatesAutoresizingMaskIntoConstraints = false
-        tableView.backgroundColor = .clear
-        tableView.headerView = nil
-        tableView.rowHeight = SidebarView.rowHeight
-        tableView.intercellSpacing = NSSize(width: 0, height: 2)
-        tableView.selectionHighlightStyle = .none
-        tableView.gridStyleMask = []
-        tableView.delegate = self
-        tableView.dataSource = self
-        tableView.target = self
-        tableView.action = #selector(tableViewClicked(_:))
-
-        let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("SessionColumn"))
-        column.isEditable = false
-        column.resizingMask = .autoresizingMask
-        tableView.addTableColumn(column)
-        tableView.columnAutoresizingStyle = .uniformColumnAutoresizingStyle
-        if #available(macOS 11.0, *) {
-            tableView.style = .fullWidth
-        }
-
-        scrollView = NSScrollView()
-        scrollView.translatesAutoresizingMaskIntoConstraints = false
-        scrollView.documentView = tableView
-        scrollView.hasVerticalScroller = true
-        scrollView.hasHorizontalScroller = false
-        scrollView.autohidesScrollers = true
-        scrollView.drawsBackground = false
-        scrollView.borderType = .noBorder
-        scrollView.scrollerStyle = .overlay
-        scrollView.scrollerKnobStyle = .light
-        scrollView.verticalScroller = ThinScroller()
-
-        addSubview(scrollView)
-
-        let menu = NSMenu()
-        menu.delegate = self
-        tableView.menu = menu
+    private func setupProjectListView() {
+        projectListView = ProjectListView(
+            projectManager: projectManager, sessionManager: sessionManager)
+        projectListView.translatesAutoresizingMaskIntoConstraints = false
+        projectListView.isHidden = true
+        projectListView.delegate = self
+        addSubview(projectListView)
     }
 
     private func setupSeparatorLine() {
@@ -300,27 +274,23 @@ class SidebarView: NSView {
             iconBarSeparator.trailingAnchor.constraint(equalTo: contentTrailing, constant: -12),
             iconBarSeparator.heightAnchor.constraint(equalToConstant: 1),
 
-            // Sessions header
-            headerLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 16),
-            headerLabel.topAnchor.constraint(equalTo: iconBarSeparator.bottomAnchor, constant: 10),
-
-            // Sessions scroll view
-            scrollView.topAnchor.constraint(equalTo: headerLabel.bottomAnchor, constant: 8),
-            scrollView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            scrollView.trailingAnchor.constraint(equalTo: contentTrailing),
-            scrollView.bottomAnchor.constraint(equalTo: bottomAnchor),
-
-            // File tree (same region, toggled via isHidden)
+            // File tree (toggled via isHidden)
             fileTreeView.topAnchor.constraint(equalTo: iconBarSeparator.bottomAnchor),
             fileTreeView.leadingAnchor.constraint(equalTo: leadingAnchor),
             fileTreeView.trailingAnchor.constraint(equalTo: contentTrailing),
             fileTreeView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
-            // Agent list view (same region, toggled via isHidden)
+            // Agent list view (toggled via isHidden)
             agentListView.topAnchor.constraint(equalTo: iconBarSeparator.bottomAnchor),
             agentListView.leadingAnchor.constraint(equalTo: leadingAnchor),
             agentListView.trailingAnchor.constraint(equalTo: contentTrailing),
             agentListView.bottomAnchor.constraint(equalTo: bottomAnchor),
+
+            // Project list view (toggled via isHidden)
+            projectListView.topAnchor.constraint(equalTo: iconBarSeparator.bottomAnchor),
+            projectListView.leadingAnchor.constraint(equalTo: leadingAnchor),
+            projectListView.trailingAnchor.constraint(equalTo: contentTrailing),
+            projectListView.bottomAnchor.constraint(equalTo: bottomAnchor),
 
             // Right edge separator
             separatorLine.topAnchor.constraint(equalTo: topAnchor),
@@ -332,9 +302,9 @@ class SidebarView: NSView {
 
     // MARK: - Mode Switching
 
-    @objc private func sessionsButtonClicked() { setMode(.sessions) }
     @objc private func fileTreeButtonClicked() { setMode(.fileTree) }
     @objc private func agentsButtonClicked() { setMode(.agents) }
+    @objc private func projectsButtonClicked() { setMode(.projects) }
 
     @objc private func attentionCountDidChange() {
         let count = agentManager.attentionCount
@@ -343,19 +313,22 @@ class SidebarView: NSView {
 
     private func setMode(_ newMode: SidebarMode) {
         mode = newMode
-        sessionsButton.isActiveState = mode == .sessions
-        fileTreeButton.isActiveState = mode == .fileTree
+        projectsButton.isActiveState = mode == .projects
         agentsButton.isActiveState = mode == .agents
+        fileTreeButton.isActiveState = mode == .fileTree
 
-        headerLabel.isHidden = mode != .sessions
-        scrollView.isHidden = mode != .sessions
-        fileTreeView.isHidden = mode != .fileTree
+        projectListView.isHidden = mode != .projects
         agentListView.isHidden = mode != .agents
+        fileTreeView.isHidden = mode != .fileTree
 
         if mode == .fileTree {
             fileTreeView.setRootPath(delegate?.sidebarCurrentDirectory())
+        } else if mode == .projects {
+            projectListView.reloadProjects()
         }
     }
+
+    // MARK: - Public API
 
     /// Called externally when the active pane changes or its pwd updates.
     func updateFileTreePath(_ path: String?) {
@@ -363,97 +336,15 @@ class SidebarView: NSView {
         fileTreeView.setRootPath(path)
     }
 
-    // MARK: - Public
-
     func reloadSessions() {
-        tableView.reloadData()
-
-        let activeIndex = sessionManager.activeSessionIndex
-        if activeIndex >= 0 && activeIndex < sessionManager.sessions.count {
-            tableView.selectRowIndexes(IndexSet(integer: activeIndex), byExtendingSelection: false)
+        if mode == .projects {
+            projectListView.reloadSessions()
         }
     }
 
-    // MARK: - Actions
-
-    @objc private func tableViewClicked(_ sender: Any) {
-        let clickedRow = tableView.clickedRow
-        guard clickedRow >= 0, clickedRow < sessionManager.sessions.count else { return }
-        let session = sessionManager.sessions[clickedRow]
-        delegate?.sidebarDidSelectSession(session)
-    }
-
-    @objc private func renameMenuItemClicked(_ sender: NSMenuItem) {
-        guard let session = sender.representedObject as? Session else { return }
-        delegate?.sidebarDidRequestRenameSession(session)
-    }
-
-    @objc private func deleteMenuItemClicked(_ sender: NSMenuItem) {
-        guard let session = sender.representedObject as? Session else { return }
-        delegate?.sidebarDidRequestDeleteSession(session)
-    }
-}
-
-// MARK: - NSTableViewDataSource
-
-extension SidebarView: NSTableViewDataSource {
-    func numberOfRows(in tableView: NSTableView) -> Int {
-        return sessionManager.sessions.count
-    }
-}
-
-// MARK: - NSTableViewDelegate
-
-extension SidebarView: NSTableViewDelegate {
-    func tableView(_ tableView: NSTableView, viewFor tableColumn: NSTableColumn?, row: Int) -> NSView? {
-        guard row < sessionManager.sessions.count else { return nil }
-        let session = sessionManager.sessions[row]
-        let isActive = (row == sessionManager.activeSessionIndex)
-
-        var cellView = tableView.makeView(
-            withIdentifier: SidebarView.sessionCellID,
-            owner: self
-        ) as? SessionCellView
-
-        if cellView == nil {
-            cellView = SessionCellView()
-            cellView?.identifier = SidebarView.sessionCellID
-        }
-
-        cellView?.configure(session: session, isActive: isActive, index: row + 1)
-        return cellView
-    }
-
-    func tableView(_ tableView: NSTableView, heightOfRow row: Int) -> CGFloat {
-        return SidebarView.rowHeight
-    }
-
-    func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
-        return SidebarSessionRowView()
-    }
-}
-
-// MARK: - NSMenuDelegate (context menu)
-
-extension SidebarView: NSMenuDelegate {
-    func menuNeedsUpdate(_ menu: NSMenu) {
-        menu.removeAllItems()
-
-        let clickedRow = tableView.clickedRow
-        guard clickedRow >= 0, clickedRow < sessionManager.sessions.count else { return }
-        let session = sessionManager.sessions[clickedRow]
-
-        let renameItem = NSMenuItem(title: "Rename", action: #selector(renameMenuItemClicked(_:)), keyEquivalent: "")
-        renameItem.representedObject = session
-        renameItem.target = self
-        menu.addItem(renameItem)
-
-        if sessionManager.sessions.count > 1 {
-            menu.addItem(NSMenuItem.separator())
-            let deleteItem = NSMenuItem(title: "Close", action: #selector(deleteMenuItemClicked(_:)), keyEquivalent: "")
-            deleteItem.representedObject = session
-            deleteItem.target = self
-            menu.addItem(deleteItem)
+    func reloadProjects() {
+        if mode == .projects {
+            projectListView.reloadProjects()
         }
     }
 }
@@ -470,7 +361,8 @@ extension SidebarView: FileTreeViewDelegate {
 
 extension SidebarView: AgentListViewDelegate {
     func agentListDidRequestFocusPane(paneID: UUID, tabID: UUID?, sessionID: UUID) {
-        delegate?.sidebarDidRequestFocusAgentPane(paneID: paneID, tabID: tabID, sessionID: sessionID)
+        delegate?.sidebarDidRequestFocusAgentPane(
+            paneID: paneID, tabID: tabID, sessionID: sessionID)
     }
     func agentListDidRequestSendInterrupt(agent: AgentInstance) {
         delegate?.sidebarDidRequestSendInterrupt(agent: agent)
@@ -480,151 +372,23 @@ extension SidebarView: AgentListViewDelegate {
     }
 }
 
-// MARK: - Session Cell View
+// MARK: - ProjectListViewDelegate
 
-private class SessionCellView: NSView {
-    private let colorDot = NSView()
-    private let nameLabel = NSTextField(labelWithString: "")
-    private let shortcutLabel = NSTextField(labelWithString: "")
-    private let highlightView = NSView()
-    private var trackingArea: NSTrackingArea?
-    private var isHovered = false
-    private var isActiveSession = false
-
-    override init(frame frameRect: NSRect) {
-        super.init(frame: frameRect)
-        setupSubviews()
+extension SidebarView: ProjectListViewDelegate {
+    func projectListDidSelectProject(_ project: Project) {
+        delegate?.sidebarDidSelectProject(project)
+    }
+    func projectListDidRequestAddProject() {
+        delegate?.sidebarDidRequestAddProject()
+    }
+    func projectListDidRequestDeleteProject(_ project: Project) {
+        delegate?.sidebarDidRequestDeleteProject(project)
+    }
+    func projectListDidRequestRenameProject(_ project: Project) {
+        delegate?.sidebarDidRequestRenameProject(project)
+    }
+    func projectListDidRequestOpenFolder(_ project: Project) {
+        delegate?.sidebarDidRequestOpenProjectFolder(project)
     }
 
-    @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
-
-    private func setupSubviews() {
-        wantsLayer = true
-
-        highlightView.translatesAutoresizingMaskIntoConstraints = false
-        highlightView.wantsLayer = true
-        highlightView.layer?.cornerRadius = Theme.CornerRadius.element
-        addSubview(highlightView)
-
-        colorDot.translatesAutoresizingMaskIntoConstraints = false
-        colorDot.wantsLayer = true
-        colorDot.layer?.cornerRadius = 0
-        addSubview(colorDot)
-
-        nameLabel.translatesAutoresizingMaskIntoConstraints = false
-        nameLabel.font = Theme.Fonts.body(size: 13)
-        nameLabel.textColor = Theme.secondaryText
-        nameLabel.backgroundColor = .clear
-        nameLabel.isBezeled = false
-        nameLabel.isEditable = false
-        nameLabel.isSelectable = false
-        nameLabel.lineBreakMode = .byTruncatingTail
-        nameLabel.maximumNumberOfLines = 1
-        nameLabel.cell?.truncatesLastVisibleLine = true
-        addSubview(nameLabel)
-
-        shortcutLabel.translatesAutoresizingMaskIntoConstraints = false
-        shortcutLabel.font = NSFont.monospacedSystemFont(ofSize: 11, weight: .regular)
-        shortcutLabel.textColor = Theme.quaternaryText
-        shortcutLabel.backgroundColor = .clear
-        shortcutLabel.isBezeled = false
-        shortcutLabel.isEditable = false
-        shortcutLabel.isSelectable = false
-        shortcutLabel.alignment = .center
-        addSubview(shortcutLabel)
-
-        NSLayoutConstraint.activate([
-            highlightView.leadingAnchor.constraint(equalTo: leadingAnchor),
-            highlightView.trailingAnchor.constraint(equalTo: trailingAnchor),
-            highlightView.topAnchor.constraint(equalTo: topAnchor, constant: 1),
-            highlightView.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -1),
-
-            colorDot.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 18),
-            colorDot.centerYAnchor.constraint(equalTo: centerYAnchor),
-            colorDot.widthAnchor.constraint(equalToConstant: 8),
-            colorDot.heightAnchor.constraint(equalToConstant: 8),
-
-            nameLabel.leadingAnchor.constraint(equalTo: colorDot.trailingAnchor, constant: 8),
-            nameLabel.trailingAnchor.constraint(lessThanOrEqualTo: shortcutLabel.leadingAnchor, constant: -8),
-            nameLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-
-            shortcutLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -16),
-            shortcutLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            shortcutLabel.widthAnchor.constraint(equalToConstant: 20),
-        ])
-    }
-
-    func configure(session: Session, isActive: Bool, index: Int) {
-        isActiveSession = isActive
-        isHovered = false
-        nameLabel.stringValue = session.name
-
-        colorDot.layer?.backgroundColor = session.statusColor.cgColor
-
-        nameLabel.textColor = isActive ? Theme.primaryText : Theme.secondaryText
-        nameLabel.font = isActive ? Theme.Fonts.headline(size: 13) : Theme.Fonts.body(size: 13)
-
-        if index <= 9 {
-            shortcutLabel.stringValue = "\(index)"
-            shortcutLabel.isHidden = false
-        } else {
-            shortcutLabel.isHidden = true
-        }
-
-        updateBackground()
-    }
-
-    private func updateBackground() {
-        if isActiveSession {
-            highlightView.layer?.backgroundColor = Theme.activeBg.cgColor
-        } else if isHovered {
-            highlightView.layer?.backgroundColor = Theme.hoverBg.cgColor
-        } else {
-            highlightView.layer?.backgroundColor = NSColor.clear.cgColor
-        }
-    }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let existing = trackingArea {
-            removeTrackingArea(existing)
-        }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.mouseEnteredAndExited, .activeInActiveApp],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        trackingArea = area
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        isHovered = true
-        updateBackground()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        isHovered = false
-        updateBackground()
-    }
-}
-
-// MARK: - Custom row view
-
-private class SidebarSessionRowView: NSTableRowView {
-    override func drawSelection(in dirtyRect: NSRect) {
-        // Handled by cell view
-    }
-
-    override func drawBackground(in dirtyRect: NSRect) {
-        // Transparent
-    }
-
-    override var interiorBackgroundStyle: NSView.BackgroundStyle {
-        return .emphasized
-    }
 }
