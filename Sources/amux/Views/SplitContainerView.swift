@@ -169,6 +169,14 @@ class SplitContainerView: NSView {
         // Create views for new panes and new dividers
         ensureViewsForNode(root)
 
+        // Re-stamp projectRootPath on all panes (including those restored from
+        // cache) so new tabs always open in the correct project directory.
+        if let root = projectRootPath {
+            for (_, pane) in paneViews {
+                pane.projectRootPath = root
+            }
+        }
+
         needsLayout = true
     }
 
@@ -622,6 +630,7 @@ extension SplitContainerView: TerminalPaneDelegate {
         let newPane = TerminalPane(paneID: newPaneID, skipInitialTab: true)
         newPane.isFocused = false
         newPane.delegate = self
+        newPane.projectRootPath = projectRootPath
         paneViews[newPaneID] = newPane
         addSubview(newPane)
         containerDelegate?.splitContainerView(self, didCreatePane: newPane)

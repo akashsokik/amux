@@ -511,20 +511,20 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         let sessionMenuItem = NSMenuItem()
         let sessionMenu = NSMenu(title: "Project")
 
-        let newSessionItem = NSMenuItem(
-            title: "New Project Session", action: #selector(newSession(_:)), keyEquivalent: "T")
-        newSessionItem.keyEquivalentModifierMask = [.command, .shift]
-        newSessionItem.target = self
-        sessionMenu.addItem(newSessionItem)
+        let openProjectItem = NSMenuItem(
+            title: "Open Project", action: #selector(openProject(_:)), keyEquivalent: "O")
+        openProjectItem.keyEquivalentModifierMask = [.command, .shift]
+        openProjectItem.target = self
+        sessionMenu.addItem(openProjectItem)
 
-        let closeSessionItem = NSMenuItem(
-            title: "Close Project Session", action: #selector(closeSession(_:)), keyEquivalent: "W")
-        closeSessionItem.keyEquivalentModifierMask = [.command, .shift]
-        closeSessionItem.target = self
-        sessionMenu.addItem(closeSessionItem)
+        let closeProjectItem = NSMenuItem(
+            title: "Close Project", action: #selector(closeProject(_:)), keyEquivalent: "W")
+        closeProjectItem.keyEquivalentModifierMask = [.command, .shift]
+        closeProjectItem.target = self
+        sessionMenu.addItem(closeProjectItem)
 
         let renameSessionItem = NSMenuItem(
-            title: "Rename Project Session", action: #selector(renameSession(_:)),
+            title: "Rename Project", action: #selector(renameSession(_:)),
             keyEquivalent: "N")
         renameSessionItem.keyEquivalentModifierMask = [.command, .shift]
         renameSessionItem.target = self
@@ -850,15 +850,15 @@ class AppDelegate: NSObject, NSApplicationDelegate {
                     icon: "arrow.left.square"
                 ) { [weak self] in self?.previousTab(nil) },
                 PaletteCommand(
-                    category: "Project", name: "New Project Session", shortcut: "Cmd+Shift+T",
-                    icon: "terminal"
-                ) { [weak self] in self?.newSession(nil) },
+                    category: "Project", name: "Open Project", shortcut: "Cmd+Shift+O",
+                    icon: "folder.badge.plus"
+                ) { [weak self] in self?.openProject(nil) },
                 PaletteCommand(
-                    category: "Project", name: "Close Project Session", shortcut: "Cmd+Shift+W",
+                    category: "Project", name: "Close Project", shortcut: "Cmd+Shift+W",
                     icon: "xmark.circle"
-                ) { [weak self] in self?.closeSession(nil) },
+                ) { [weak self] in self?.closeProject(nil) },
                 PaletteCommand(
-                    category: "Project", name: "Rename Project Session", shortcut: "Cmd+Shift+N",
+                    category: "Project", name: "Rename Project", shortcut: "Cmd+Shift+N",
                     icon: "pencil"
                 ) { [weak self] in self?.renameSession(nil) },
                 PaletteCommand(
@@ -1051,7 +1051,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(sender)
     }
 
-    // MARK: - Project Session Actions
+    // MARK: - Project Actions
 
     /// Sessions visible in the current project scope (or all unscoped if no project active).
     private var projectScopedSessions: [Session] {
@@ -1059,6 +1059,16 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             return sessionManager.sessions.filter { $0.projectID == project.id }
         }
         return sessionManager.sessions.filter { $0.projectID == nil }
+    }
+
+    @objc private func openProject(_ sender: Any?) {
+        windowController.sidebarDidRequestAddProject()
+    }
+
+    @objc private func closeProject(_ sender: Any?) {
+        guard let project = windowController.projectManager.activeProject else { return }
+        windowController.sidebarDidRequestDeleteProject(project)
+        windowController.sidebarView.reloadProjects()
     }
 
     @objc private func newSession(_ sender: Any?) {
@@ -1072,7 +1082,6 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func closeSession(_ sender: Any?) {
         guard let session = sessionManager.activeSession else { return }
         let scoped = projectScopedSessions
-        // Must keep at least one session in this scope
         guard scoped.count > 1 else { return }
 
         let paneIDs = session.splitTree.allPaneIDs()

@@ -806,23 +806,21 @@ extension MainWindowController: SidebarViewDelegate {
     }
 
     private func openWorktreeAsNewSession(path: String) {
-        let name = URL(fileURLWithPath: path).lastPathComponent
-        let session = sessionManager.createSession(name: name)
-        displaySession(session)
-        sidebarView.reloadSessions()
-        // cd into the worktree after the shell spawns
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in
-            guard let self = self,
-                let focusedID = session.focusedPaneID,
-                let pane = self.splitContainerView.pane(for: focusedID),
-                let tv = pane.terminalView,
-                let surface = tv.surface
-            else { return }
-            let cmd = "cd \"\(path)\"\r"
-            cmd.withCString { ptr in
-                ghostty_surface_text(surface, ptr, UInt(cmd.utf8.count))
-            }
+        let url = URL(fileURLWithPath: path)
+        let folderName = url.lastPathComponent
+
+        // If a project already exists for this path, just switch to it
+        if projectManager.hasProject(withRootPath: path),
+            let existing = projectManager.projects.first(where: { $0.rootPath == path })
+        {
+            sidebarDidSelectProject(existing)
+            return
         }
+
+        // Otherwise add it as a new project and select it — same flow as the + button
+        let project = projectManager.addProject(rootPath: path, name: folderName)
+        sidebarView.reloadProjects()
+        sidebarDidSelectProject(project)
     }
 
     func sidebarDidSelectFile(path: String) {
